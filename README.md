@@ -58,7 +58,27 @@ If a driver does not appear, check that no other driver in the folder claims the
 
 ## Screenshots
 
-Setup dialogs and mode pages are in [`docs/screenshots/`](docs/screenshots/).
+One button per real mode — the low/middle/high range is a preset inside each mode, not a
+mode of its own:
+
+![Mode buttons](docs/screenshots/chroma-63000-modes.png)
+
+Every mode page follows the same order: the active mode, the Load button, the settings
+for that mode, then the global protection settings and short-circuit simulation. The
+setpoint limits shown beside each field are those of the **selected range**.
+
+| | |
+| --- | --- |
+| ![Constant current](docs/screenshots/chroma-63000-constant-current.png) | ![Constant voltage](docs/screenshots/chroma-63000-constant-voltage.png) |
+| **Constant current** | **Constant voltage** |
+| ![Constant resistance](docs/screenshots/chroma-63000-constant-resistance.png) | ![Constant power](docs/screenshots/chroma-63000-constant-power.png) |
+| **Constant resistance** — the slew span follows the current measurement range | **Constant power** |
+| ![Battery discharge](docs/screenshots/chroma-63000-battery-discharge.png) | ![OCP test](docs/screenshots/chroma-63000-ocp-test.png) |
+| **Battery discharge** — elapsed time as `hh:mm:ss` | **OCP test** — sweep parameters and result |
+
+![OPP test](docs/screenshots/chroma-63000-opp-test.png)
+
+**OPP test.**
 
 ---
 
