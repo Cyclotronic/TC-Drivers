@@ -1,0 +1,16 @@
+# OS files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Nothing generated or private belongs in this repo
+__pycache__/
+*.py[cod]
+*.log
+*.bak
+*.tmp

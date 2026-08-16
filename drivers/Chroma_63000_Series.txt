@@ -1,0 +1,1133 @@
+; Chroma 63000 Series DC Electronic Load - TestController driver
+;
+; Coverage   Chroma 63003-150-40 and 63004-150-60
+;            Constant current, constant voltage, constant resistance, constant
+;            power, battery discharge, OCP test and OPP test, each with low,
+;            middle and high ranges. Protection status and limits, short circuit
+;            simulation, sweep results and discharge timer.
+;
+; Verified   Against a 63004-150-60 (firmware 2.01) over GPIB. Every command and
+;            every per-range limit checked against the instrument, not the
+;            datasheet. See docs/chroma-63000-notes.md.
+;
+; Revision   1.0
+; Date       2026-08-16
+; Author     Cyclotron
+; License    MIT - see LICENSE
+;
+; TestController by HKJ: https://lygte-info.dk/project/TestControllerIntro%20UK.html
+; Discussion: https://www.eevblog.com/forum/index.php?topic=234726.0
+
+#metadef
+#idString Chroma,63003-150-40
+#name Chroma 63003-150-40 Electronic Load
+#handle Chroma63003
+#replaceText MaxPower 250
+#replaceText MaxVoltage 150
+#replaceText MaxCurrent 40
+#replaceText CCLmax 2
+#replaceText CCMmax 4
+#replaceText CCHmax 40
+#replaceText CVLmax 16
+#replaceText CVMmax 80
+#replaceText CVHmax 150
+#replaceText CRLmin 0.075
+#replaceText CRLmax 375
+#replaceText CRMmin 25
+#replaceText CRMmax 1875
+#replaceText CRHmin 90
+#replaceText CRHmax 3750
+#replaceText CPLmax 5
+#replaceText CPMmax 25
+#replaceText CPHmax 250
+#replaceText SlewLmin 0.0001
+#replaceText SlewLmax 0.1
+#replaceText SlewMmin 0.001
+#replaceText SlewMmax 0.2
+#replaceText SlewHmin 0.01
+#replaceText SlewHmax 2
+
+#metadef
+#idString Chroma,63004-150-60
+#name Chroma 63004-150-60 Electronic Load
+#handle Chroma63004
+#replaceText MaxPower 350
+#replaceText MaxVoltage 150
+#replaceText MaxCurrent 60
+#replaceText CCLmax 2
+#replaceText CCMmax 6
+#replaceText CCHmax 60
+#replaceText CVLmax 16
+#replaceText CVMmax 80
+#replaceText CVHmax 150
+#replaceText CRLmin 0.05
+#replaceText CRLmax 250
+#replaceText CRMmin 18
+#replaceText CRMmax 1250
+#replaceText CRHmin 64
+#replaceText CRHmax 2500
+#replaceText CPLmax 7
+#replaceText CPMmax 35
+#replaceText CPHmax 350
+#replaceText SlewLmin 0.0001
+#replaceText SlewLmax 0.1
+#replaceText SlewMmin 0.001
+#replaceText SlewMmax 0.3
+#replaceText SlewHmin 0.01
+#replaceText SlewHmax 3
+
+#meta
+#idString Chroma,630
+#name Chroma 63000 Series Electronic Load
+#handle Chroma63000
+#port 1234 com GPIB LXI
+#baudrate 115200
+#driver SCPI
+#eol LF
+
+#author Cyclotron
+#notes Chroma 63000 Series Programmable DC Electronic Load Driver for TestController.
+
+#value Voltage V D4
+#value Current A D4
+#value Power W D4
+
+; Each query must be fully qualified. TestController splits this on ';' and sends the
+; parts as separate commands, so a bare "CURR?" - valid only as a continuation of
+; "MEAS:" on one line - returns nothing and the channel silently logs no data.
+#askValues MEAS:VOLT?;MEAS:CURR?;MEAS:POW?
+
+; Track the mode the load is actually in, so a mode or range changed from the front
+; panel (or by the Range control) is picked up rather than assumed.
+;
+; MODE? reports mode and range as one word (CCL/CCM/CCH). The range is a setting
+; within the mode, not a mode of its own, so the trailing range letter is stripped
+; here and the mode becomes plain CC/CV/CR/CP/BAT/OCP/OPP. That keeps the mode popup
+; to one button per real mode while the Range control on each page picks L/M/H.
+#askMode MODE?
+#askModeMathFormat replaceRX(unQuote(value),"[LMH]$","")
+#modeChangeDelay 300
+
+#finalCmd LOAD OFF
+#outputOff LOAD OFF
+
+#interfaceType Load
+#interface setOn LOAD (getElement("OFF ON",value))
+#interface setMode MODE (value)
+#interface setCurrent CURR:STAT:L1 (value)
+#interface setVoltage VOLT:STAT:L1 (value)
+#interface setPower POW:STAT:L1 (value)
+#interface setResistance RES:STAT:L1 (value)
+
+#interface getOn LOAD?
+#interface getMode MODE?
+#interface getCurrent CURR:STAT:L1?
+#interface getVoltage VOLT:STAT:L1?
+#interface getPower POW:STAT:L1?
+#interface getResistance RES:STAT:L1?
+
+#interface readVoltage 0
+#interface readCurrent 1
+#interface readPower 2
+
+; A setpoint's valid span is set by the selected Range, not by the model alone: a
+; 63004 in CR High accepts 64-2500 ohm, the same field in CR Low accepts 0.05-250.
+; Offering the model's full span let a value be typed that the load simply ignored.
+;
+; The range-dependent fields therefore live on per-range pages (CC_Lo / CC_Mid /
+; CC_Hi and so on) with literal limits, and the selector picks the right page from
+; MODE?. An earlier attempt used advNumber with expressions referencing the Range
+; control - do not go back to that. TestController raises
+;     ProgramExceptions$UnknownException: Variable not found CC.Range
+; because a page named by a selector is never created, so no CC.Range variable
+; exists; and that exception aborts syncAll, leaving the WHOLE form blank rather
+; than just the one field.
+
+; =========================================================
+; Mode Layout and Setup
+; =========================================================
+; One button per real mode. The L/M/H range is a setting inside the mode, offered by
+; the Range control on each page, so it does not multiply the mode buttons.
+;
+; The second token is the mode string after #askModeMathFormat has stripped the range
+; letter, i.e. what MODE? reports reduced to its base mode. Keep the two in step.
+;
+; Each button selects the low range as a safe default; change it with Range.
+#cmdModeLayout 4 2
+
+#cmdMode Constant_Current CC
+MODE CCL;[*OPC]
+
+#cmdMode Constant_Voltage CV
+MODE CVL;[*OPC]
+
+#cmdMode Constant_Resistance CR
+MODE CRL;[*OPC]
+
+#cmdMode Constant_Power CP
+MODE CPL;[*OPC]
+
+#cmdMode Battery_Discharge BAT
+MODE BATL;[*OPC]
+
+#cmdMode OCP_Test OCP
+MODE OCPH;[*OPC]
+
+#cmdMode OPP_Test OPP
+MODE OPPH;[*OPC]
+
+; =========================================================
+; Setup View Selector
+; =========================================================
+; A page named here is shown inline under the selector rather than as its own tab.
+; Info and Protection are listed on every line: the active-mode readout sits at the
+; top of each page and the OCP/OPP protection limits at the bottom, because those
+; limits are global to the instrument rather than belonging to one mode.
+#cmdSetup selector Mode_settings
+:read: MODE?
+:updatemodechange:
+CCL Info. CCa. CC_Lo. CCb. Protection.
+CCM Info. CCa. CC_Mid. CCb. Protection.
+CCH Info. CCa. CC_Hi. CCb. Protection.
+CVL Info. CVa. CV_Lo. CVb. Protection.
+CVM Info. CVa. CV_Mid. CVb. Protection.
+CVH Info. CVa. CV_Hi. CVb. Protection.
+CRL Info. CRa. CR_Lo. CRb. Protection.
+CRM Info. CRa. CR_Mid. CRb. Protection.
+CRH Info. CRa. CR_Hi. CRb. Protection.
+CPL Info. CPa. CP_Lo. CPb. Protection.
+CPM Info. CPa. CP_Mid. CPb. Protection.
+CPH Info. CPa. CP_Hi. CPb. Protection.
+BATL Info. BATa. BAT_Lo. BATb. Protection.
+BATM Info. BATa. BAT_Mid. BATb. Protection.
+BATH Info. BATa. BAT_Hi. BATb. Protection.
+OCPH Info. OCP. Protection.
+OPPH Info. OPP. Protection.
+
+; =========================================================
+; Active Mode Info
+; =========================================================
+; Shows the mode using the same names as the mode buttons. The range is deliberately
+; not repeated here - it is the Range control on the page below.
+#cmdSetup info Active_Mode Info
+:labelformat: bold ++
+:read: MODE?
+:readmath: getElement("Constant Current;Constant Voltage;Constant Resistance;Constant Power;Battery Discharge;OCP Test;OPP Test",listIndex(replaceRX(unQuote(value),"[LMH]$",""),"CC CV CR CP BAT OCP OPP"," "),";")
+:updatemodechange:
+:layout:
+
+#cmdSetup buttonsOn Load Info
+:read: LOAD?
+:readmath: listIndex(unQuote(value),"OFF ON"," ")
+:write: LOAD
+:updatealloff:
+:updatemodechange:
+:color: (0,200,0)
+Off 0
+On 1
+
+; Heading for the selected mode's own settings, which the selector inserts next.
+#cmdSetup separator - Info
+6 100 Empty
+
+#cmdSetup separator - Info
+3 100 Solid
+center Mode Settings
+
+; =========================================================
+; CC Settings
+; =========================================================
+#cmdSetup radio Range CCa
+:read: MODE?
+:readmath: trim(unQuote(value))
+:write: MODE
+:string:
+:updatemodechange:
+:update: Mode_settings
+:updatedelayed: 0.3
+:tip: Load range for this mode. Each range keeps its own settings and limits, so the values below re-read when you change it.
+Low CCL
+Middle CCM
+High CCH
+
+#cmdSetup number Current CC_Lo
+:read: CURR:STAT:L1?
+:write: CURR:STAT:L1
+:updatemodechange:
+:format: D4
+:buttontext: Set
+A 0 CCLmax
+
+#cmdSetup number Slew_Rate_Rise CC_Lo
+:read: CURR:STAT:RISE?
+:write: CURR:STAT:RISE
+:updatemodechange:
+:format: D4
+:tip: Rate at which the load ramps to a new setpoint.
+:buttontext: Set
+A/us SlewLmin SlewLmax
+
+#cmdSetup number Slew_Rate_Fall CC_Lo
+:read: CURR:STAT:FALL?
+:write: CURR:STAT:FALL
+:updatemodechange:
+:format: D4
+:tip: Rate at which the load ramps to a new setpoint.
+:buttontext: Set
+A/us SlewLmin SlewLmax
+
+#cmdSetup number Current CC_Mid
+:read: CURR:STAT:L1?
+:write: CURR:STAT:L1
+:updatemodechange:
+:format: D4
+:buttontext: Set
+A 0 CCMmax
+
+#cmdSetup number Slew_Rate_Rise CC_Mid
+:read: CURR:STAT:RISE?
+:write: CURR:STAT:RISE
+:updatemodechange:
+:format: D4
+:tip: Rate at which the load ramps to a new setpoint.
+:buttontext: Set
+A/us SlewMmin SlewMmax
+
+#cmdSetup number Slew_Rate_Fall CC_Mid
+:read: CURR:STAT:FALL?
+:write: CURR:STAT:FALL
+:updatemodechange:
+:format: D4
+:tip: Rate at which the load ramps to a new setpoint.
+:buttontext: Set
+A/us SlewMmin SlewMmax
+
+#cmdSetup number Current CC_Hi
+:read: CURR:STAT:L1?
+:write: CURR:STAT:L1
+:updatemodechange:
+:format: D4
+:buttontext: Set
+A 0 CCHmax
+
+#cmdSetup number Slew_Rate_Rise CC_Hi
+:read: CURR:STAT:RISE?
+:write: CURR:STAT:RISE
+:updatemodechange:
+:format: D4
+:tip: Rate at which the load ramps to a new setpoint.
+:buttontext: Set
+A/us SlewHmin SlewHmax
+
+#cmdSetup number Slew_Rate_Fall CC_Hi
+:read: CURR:STAT:FALL?
+:write: CURR:STAT:FALL
+:updatemodechange:
+:format: D4
+:tip: Rate at which the load ramps to a new setpoint.
+:buttontext: Set
+A/us SlewHmin SlewHmax
+
+#cmdSetup number Turn_On_Voltage CCb
+:read: CONF:VOLT:ON?
+:write: CONF:VOLT:ON
+:updatemodechange:
+:format: D2
+:tip: Von - the load waits until the input rises above this before it starts drawing. 0 means start as soon as Load is switched on. A value above the supply voltage looks like a load that refuses to turn on.
+:buttontext: Set
+V 0 MaxVoltage
+
+#cmdSetup radio Voltage_Measurement_Range CCb
+:read: CURR:STAT:VRNG?
+:readmath: listIndex(unQuote(value),"Low Middle High"," ")
+:write: CURR:STAT:VRNG
+:updatemodechange:
+:tip: Voltage measurement range used while in CC mode.
+Low 0
+Middle 1
+High 2
+
+; =========================================================
+; CV Settings
+; =========================================================
+#cmdSetup radio Range CVa
+:read: MODE?
+:readmath: trim(unQuote(value))
+:write: MODE
+:string:
+:updatemodechange:
+:update: Mode_settings
+:updatedelayed: 0.3
+:tip: Load range for this mode. Each range keeps its own settings and limits, so the values below re-read when you change it.
+Low CVL
+Middle CVM
+High CVH
+
+#cmdSetup number Voltage CV_Lo
+:read: VOLT:STAT:L1?
+:write: VOLT:STAT:L1
+:updatemodechange:
+:format: D4
+:buttontext: Set
+V 0 CVLmax
+
+#cmdSetup number Voltage CV_Mid
+:read: VOLT:STAT:L1?
+:write: VOLT:STAT:L1
+:updatemodechange:
+:format: D4
+:buttontext: Set
+V 0 CVMmax
+
+#cmdSetup number Voltage CV_Hi
+:read: VOLT:STAT:L1?
+:write: VOLT:STAT:L1
+:updatemodechange:
+:format: D4
+:buttontext: Set
+V 0 CVHmax
+
+#cmdSetup number Current_Limit CVb
+:read: VOLT:STAT:ILIM?
+:write: VOLT:STAT:ILIM
+:updatemodechange:
+:format: D3
+:buttontext: Set
+A 0 MaxCurrent
+
+#cmdSetup radio Response_Speed CVb
+:read: VOLT:STAT:RES?
+:readmath: listIndex(unQuote(value),"Slow Normal Fast"," ")
+:write: VOLT:STAT:RES
+:updatemodechange:
+Slow 0
+Normal 1
+Fast 2
+
+#cmdSetup radio Voltage_Measurement_Range CVb
+:read: CONF:VOLT:RANG?
+:readmath: listIndex(unQuote(value),"Low Middle High"," ")
+:write: CONF:VOLT:RANG
+:updatemodechange:
+:tip: Voltage measurement range (16 V / 80 V / 150 V).
+Low 0
+Middle 1
+High 2
+
+; =========================================================
+; CR Settings
+; =========================================================
+#cmdSetup radio Range CRa
+:read: MODE?
+:readmath: trim(unQuote(value))
+:write: MODE
+:string:
+:updatemodechange:
+:update: Mode_settings
+:updatedelayed: 0.3
+:tip: Load range for this mode. Each range keeps its own settings and limits, so the values below re-read when you change it.
+Low CRL
+Middle CRM
+High CRH
+
+#cmdSetup number Resistance CR_Lo
+:read: RES:STAT:L1?
+:write: RES:STAT:L1
+:updatemodechange:
+:format: D2
+:buttontext: Set
+Ohm CRLmin CRLmax
+
+#cmdSetup number Resistance CR_Mid
+:read: RES:STAT:L1?
+:write: RES:STAT:L1
+:updatemodechange:
+:format: D2
+:buttontext: Set
+Ohm CRMmin CRMmax
+
+#cmdSetup number Resistance CR_Hi
+:read: RES:STAT:L1?
+:write: RES:STAT:L1
+:updatemodechange:
+:format: D2
+:buttontext: Set
+Ohm CRHmin CRHmax
+
+; CR slew is a CURRENT slew, so its span follows Current Measurement Range below - NOT the resistance
+; range. Verified on the instrument: identical in CRL/CRM/CRH and moving 0.0001-0.1 /
+; 0.001-0.3 / 0.01-3 as RES:STAT:IRNG changes. A selector injects the matching pair.
+; TestController draws only the FIRST control of a page reached through a selector
+; that itself sits on a selector-inserted page. Any further control on that page is
+; painted over the page being displayed, at its own item index - the setting from
+; another mode appears on top of an unrelated field, and a separator becomes a line
+; struck through it. Reproduced on TC V3.48 with a two-mode cut-down of this driver:
+; two controls leaked one, three leaked two, one leaked none.
+;
+; So rise and fall each get their own selector with one control per page. Both read
+; RES:STAT:IRNG? because the slew span follows the CURRENT range, not the resistance
+; range. Do not merge them back into a single CR_Slew selector.
+#cmdSetup selector CR_Slew_Rise CRb
+:read: RES:STAT:IRNG?
+:readmath: trim(unQuote(value))
+:updatemodechange:
+Low CRrLo.
+Middle CRrMid.
+High CRrHi.
+
+#cmdSetup number Slew_Rate_Rise CRrLo
+:read: RES:STAT:RISE?
+:write: RES:STAT:RISE
+:updatemodechange:
+:format: D4
+:tip: Rate at which the load ramps to a new setpoint. Its span follows the Current Measurement Range, because this is a current slew.
+:buttontext: Set
+A/us SlewLmin SlewLmax
+
+#cmdSetup number Slew_Rate_Rise CRrMid
+:read: RES:STAT:RISE?
+:write: RES:STAT:RISE
+:updatemodechange:
+:format: D4
+:tip: Rate at which the load ramps to a new setpoint. Its span follows the Current Measurement Range, because this is a current slew.
+:buttontext: Set
+A/us SlewMmin SlewMmax
+
+#cmdSetup number Slew_Rate_Rise CRrHi
+:read: RES:STAT:RISE?
+:write: RES:STAT:RISE
+:updatemodechange:
+:format: D4
+:tip: Rate at which the load ramps to a new setpoint. Its span follows the Current Measurement Range, because this is a current slew.
+:buttontext: Set
+A/us SlewHmin SlewHmax
+
+#cmdSetup selector CR_Slew_Fall CRb
+:read: RES:STAT:IRNG?
+:readmath: trim(unQuote(value))
+:updatemodechange:
+Low CRfLo.
+Middle CRfMid.
+High CRfHi.
+
+#cmdSetup number Slew_Rate_Fall CRfLo
+:read: RES:STAT:FALL?
+:write: RES:STAT:FALL
+:updatemodechange:
+:format: D4
+:tip: Rate at which the load ramps to a new setpoint. Its span follows the Current Measurement Range, because this is a current slew.
+:buttontext: Set
+A/us SlewLmin SlewLmax
+
+#cmdSetup number Slew_Rate_Fall CRfMid
+:read: RES:STAT:FALL?
+:write: RES:STAT:FALL
+:updatemodechange:
+:format: D4
+:tip: Rate at which the load ramps to a new setpoint. Its span follows the Current Measurement Range, because this is a current slew.
+:buttontext: Set
+A/us SlewMmin SlewMmax
+
+#cmdSetup number Slew_Rate_Fall CRfHi
+:read: RES:STAT:FALL?
+:write: RES:STAT:FALL
+:updatemodechange:
+:format: D4
+:tip: Rate at which the load ramps to a new setpoint. Its span follows the Current Measurement Range, because this is a current slew.
+:buttontext: Set
+A/us SlewHmin SlewHmax
+
+#cmdSetup radio Current_Measurement_Range CRb
+:read: RES:STAT:IRNG?
+:readmath: listIndex(unQuote(value),"Low Middle High"," ")
+:write: RES:STAT:IRNG
+:updatemodechange:
+:update: CR_Slew_Rise CR_Slew_Fall
+:updatedelayed: 0.3
+:tip: Current measurement range used while in CR mode.
+Low 0
+Middle 1
+High 2
+
+; =========================================================
+; CP Settings
+; =========================================================
+#cmdSetup radio Range CPa
+:read: MODE?
+:readmath: trim(unQuote(value))
+:write: MODE
+:string:
+:updatemodechange:
+:update: Mode_settings
+:updatedelayed: 0.3
+:tip: Load range for this mode. Each range keeps its own settings and limits, so the values below re-read when you change it.
+Low CPL
+Middle CPM
+High CPH
+
+#cmdSetup number Power CP_Lo
+:read: POW:STAT:L1?
+:write: POW:STAT:L1
+:updatemodechange:
+:format: D2
+:buttontext: Set
+W 0 CPLmax
+
+#cmdSetup number Slew_Rate_Rise CP_Lo
+:read: POW:STAT:RISE?
+:write: POW:STAT:RISE
+:updatemodechange:
+:format: D4
+:tip: Rate at which the load ramps to a new setpoint.
+:buttontext: Set
+A/us SlewLmin SlewLmax
+
+#cmdSetup number Slew_Rate_Fall CP_Lo
+:read: POW:STAT:FALL?
+:write: POW:STAT:FALL
+:updatemodechange:
+:format: D4
+:tip: Rate at which the load ramps to a new setpoint.
+:buttontext: Set
+A/us SlewLmin SlewLmax
+
+#cmdSetup number Power CP_Mid
+:read: POW:STAT:L1?
+:write: POW:STAT:L1
+:updatemodechange:
+:format: D2
+:buttontext: Set
+W 0 CPMmax
+
+#cmdSetup number Slew_Rate_Rise CP_Mid
+:read: POW:STAT:RISE?
+:write: POW:STAT:RISE
+:updatemodechange:
+:format: D4
+:tip: Rate at which the load ramps to a new setpoint.
+:buttontext: Set
+A/us SlewMmin SlewMmax
+
+#cmdSetup number Slew_Rate_Fall CP_Mid
+:read: POW:STAT:FALL?
+:write: POW:STAT:FALL
+:updatemodechange:
+:format: D4
+:tip: Rate at which the load ramps to a new setpoint.
+:buttontext: Set
+A/us SlewMmin SlewMmax
+
+#cmdSetup number Power CP_Hi
+:read: POW:STAT:L1?
+:write: POW:STAT:L1
+:updatemodechange:
+:format: D2
+:buttontext: Set
+W 0 CPHmax
+
+#cmdSetup number Slew_Rate_Rise CP_Hi
+:read: POW:STAT:RISE?
+:write: POW:STAT:RISE
+:updatemodechange:
+:format: D4
+:tip: Rate at which the load ramps to a new setpoint.
+:buttontext: Set
+A/us SlewHmin SlewHmax
+
+#cmdSetup number Slew_Rate_Fall CP_Hi
+:read: POW:STAT:FALL?
+:write: POW:STAT:FALL
+:updatemodechange:
+:format: D4
+:tip: Rate at which the load ramps to a new setpoint.
+:buttontext: Set
+A/us SlewHmin SlewHmax
+
+#cmdSetup radio Voltage_Measurement_Range CPb
+:read: POW:STAT:VRNG?
+:readmath: listIndex(unQuote(value),"Low Middle High"," ")
+:write: POW:STAT:VRNG
+:updatemodechange:
+:tip: Voltage measurement range used while in CP mode.
+Low 0
+Middle 1
+High 2
+
+; =========================================================
+; BATT Settings
+; =========================================================
+#cmdSetup radio Range BATa
+:read: MODE?
+:readmath: trim(unQuote(value))
+:write: MODE
+:string:
+:updatemodechange:
+:update: Mode_settings
+:updatedelayed: 0.3
+:tip: Load range for this mode. Each range keeps its own settings and limits, so the values below re-read when you change it.
+Low BATL
+Middle BATM
+High BATH
+
+#cmdSetup radio Discharge_Mode BATa
+:read: BATT:MODE?
+:readmath: listIndex(unQuote(value),"CC CR CP"," ")
+:write: BATT:MODE
+:updatemodechange:
+:update: Discharge_Value
+:updatedelayed: 0.3
+:tip: Selects whether the battery discharge runs in CC, CR or CP. The row below changes name, unit and limits to match.
+CC 0
+CR 1
+CP 2
+
+; BATT:VAL is amps, ohms or watts depending on BATT:MODE, and its span also follows
+; the range. A second selector picks the matching control, so the label, unit and
+; limits always describe what the load will actually accept. CR discharge is pinned
+; to the high resistance range whatever the BATT range, so one control serves all three.
+#cmdSetup number Resistance BVcrLo
+:read: BATT:VAL?
+:write: BATT:VAL
+:updatemodechange:
+:format: D2
+:tip: Discharge level. This row is named for the quantity Discharge_Mode selects, and its span is what the load actually accepts in this range.
+:buttontext: Set
+Ohm CRLmin CRLmax
+
+#cmdSetup number Resistance BVcrMid
+:read: BATT:VAL?
+:write: BATT:VAL
+:updatemodechange:
+:format: D2
+:tip: Discharge level. This row is named for the quantity Discharge_Mode selects, and its span is what the load actually accepts in this range.
+:buttontext: Set
+Ohm CRMmin CRMmax
+
+#cmdSetup number Resistance BVcrHi
+:read: BATT:VAL?
+:write: BATT:VAL
+:updatemodechange:
+:format: D2
+:tip: Discharge level. This row is named for the quantity Discharge_Mode selects, and its span is what the load actually accepts in this range.
+:buttontext: Set
+Ohm CRHmin CRHmax
+
+#cmdSetup selector Discharge_Value BAT_Lo
+:read: BATT:MODE?
+:readmath: trim(unQuote(value))
+:updatemodechange:
+CC BVccLo.
+CR BVcrLo.
+CP BVcpLo.
+
+#cmdSetup number Current BVccLo
+:read: BATT:VAL?
+:write: BATT:VAL
+:updatemodechange:
+:format: D4
+:tip: Discharge level. This row is named for the quantity Discharge_Mode selects, and its span is what the load actually accepts in this range.
+:buttontext: Set
+A 0 CCLmax
+
+#cmdSetup number Power BVcpLo
+:read: BATT:VAL?
+:write: BATT:VAL
+:updatemodechange:
+:format: D2
+:tip: Discharge level. This row is named for the quantity Discharge_Mode selects, and its span is what the load actually accepts in this range.
+:buttontext: Set
+W 0 CPLmax
+
+#cmdSetup number Slew_Rate_Rise BAT_Lo
+:read: BATT:RISE?
+:write: BATT:RISE
+:updatemodechange:
+:format: D4
+:tip: Rate at which the load ramps to a new setpoint.
+:buttontext: Set
+A/us SlewLmin SlewLmax
+
+#cmdSetup number Slew_Rate_Fall BAT_Lo
+:read: BATT:FALL?
+:write: BATT:FALL
+:updatemodechange:
+:format: D4
+:tip: Rate at which the load ramps to a new setpoint.
+:buttontext: Set
+A/us SlewLmin SlewLmax
+
+#cmdSetup selector Discharge_Value BAT_Mid
+:read: BATT:MODE?
+:readmath: trim(unQuote(value))
+:updatemodechange:
+CC BVccMid.
+CR BVcrMid.
+CP BVcpMid.
+
+#cmdSetup number Current BVccMid
+:read: BATT:VAL?
+:write: BATT:VAL
+:updatemodechange:
+:format: D4
+:tip: Discharge level. This row is named for the quantity Discharge_Mode selects, and its span is what the load actually accepts in this range.
+:buttontext: Set
+A 0 CCMmax
+
+#cmdSetup number Power BVcpMid
+:read: BATT:VAL?
+:write: BATT:VAL
+:updatemodechange:
+:format: D2
+:tip: Discharge level. This row is named for the quantity Discharge_Mode selects, and its span is what the load actually accepts in this range.
+:buttontext: Set
+W 0 CPMmax
+
+#cmdSetup number Slew_Rate_Rise BAT_Mid
+:read: BATT:RISE?
+:write: BATT:RISE
+:updatemodechange:
+:format: D4
+:tip: Rate at which the load ramps to a new setpoint.
+:buttontext: Set
+A/us SlewMmin SlewMmax
+
+#cmdSetup number Slew_Rate_Fall BAT_Mid
+:read: BATT:FALL?
+:write: BATT:FALL
+:updatemodechange:
+:format: D4
+:tip: Rate at which the load ramps to a new setpoint.
+:buttontext: Set
+A/us SlewMmin SlewMmax
+
+#cmdSetup selector Discharge_Value BAT_Hi
+:read: BATT:MODE?
+:readmath: trim(unQuote(value))
+:updatemodechange:
+CC BVccHi.
+CR BVcrHi.
+CP BVcpHi.
+
+#cmdSetup number Current BVccHi
+:read: BATT:VAL?
+:write: BATT:VAL
+:updatemodechange:
+:format: D4
+:tip: Discharge level. This row is named for the quantity Discharge_Mode selects, and its span is what the load actually accepts in this range.
+:buttontext: Set
+A 0 CCHmax
+
+#cmdSetup number Power BVcpHi
+:read: BATT:VAL?
+:write: BATT:VAL
+:updatemodechange:
+:format: D2
+:tip: Discharge level. This row is named for the quantity Discharge_Mode selects, and its span is what the load actually accepts in this range.
+:buttontext: Set
+W 0 CPHmax
+
+#cmdSetup number Slew_Rate_Rise BAT_Hi
+:read: BATT:RISE?
+:write: BATT:RISE
+:updatemodechange:
+:format: D4
+:tip: Rate at which the load ramps to a new setpoint.
+:buttontext: Set
+A/us SlewHmin SlewHmax
+
+#cmdSetup number Slew_Rate_Fall BAT_Hi
+:read: BATT:FALL?
+:write: BATT:FALL
+:updatemodechange:
+:format: D4
+:tip: Rate at which the load ramps to a new setpoint.
+:buttontext: Set
+A/us SlewHmin SlewHmax
+
+; The load's own discharge timer - the measurement a battery test is actually for.
+;
+; FETC:TIME? answers in raw seconds (4.193550), which reads as an unlabelled number
+; on the form. formatHMS turns it into hh:mm:ss, so the unit is self-evident and a
+; multi-hour discharge stays readable.
+;
+; The FETCH subsystem is query-only - there is no command to zero this. The load
+; restarts the count itself each time a discharge begins, so Load off then on is the
+; reset, and the tip says so rather than offering a button that cannot work.
+#cmdSetup info Elapsed_Time BATb
+:read: FETC:TIME?
+:readmath: formatHMS(value)
+:updatemodechange:
+:layout:
+:tip: Discharge time as hh:mm:ss, counted by the load while the input is on. It cannot be zeroed on demand - the load restarts the count at the start of each discharge, so switch Load off and on again for a fresh run.
+
+#cmdSetup number Cutoff_Voltage BATb
+:read: BATT:ENDV?
+:write: BATT:ENDV
+:updatemodechange:
+:format: D2
+:tip: Discharge stops when the battery falls to this voltage. Set it to the cell chemistry's safe minimum.
+:buttontext: Set
+V 0 MaxVoltage
+
+#cmdSetup numberInt Discharge_Timeout BATb
+:read: BATT:TOUT?
+:write: BATT:TOUT
+:updatemodechange:
+:buttontext: Set
+:tip: Discharge timeout in whole seconds. 0 does NOT disable the limit - it stops the discharge instantly, so Load will appear to refuse to switch on. Set a real duration. The load truncates a fractional value (33.2 becomes 33).
+s 0 100000
+
+; =========================================================
+; OCP Settings
+; =========================================================
+#cmdSetup number Current_Start OCP
+:read: OCP:STAR?
+:write: OCP:STAR
+:updatemodechange:
+:buttontext: Set
+A 0 MaxCurrent
+
+#cmdSetup number Current_End OCP
+:read: OCP:END?
+:write: OCP:END
+:updatemodechange:
+:buttontext: Set
+A 0 MaxCurrent
+
+#cmdSetup numberInt Steps OCP
+:read: OCP:STEP?
+:write: OCP:STEP
+:updatemodechange:
+:buttontext: Set
+:tip: Number of steps the sweep is divided into.
+- 1 1000
+
+#cmdSetup number Dwell_Time OCP
+:read: OCP:DWEL?
+:write: OCP:DWEL
+:updatemodechange:
+:buttontext: Set
+s 0.0001 1
+
+#cmdSetup number Trigger_Voltage OCP
+:read: OCP:TRIG:VOLT?
+:write: OCP:TRIG:VOLT
+:updatemodechange:
+:buttontext: Set
+:tip: Sweep stops when the input drops below this voltage.
+V 0 MaxVoltage
+
+#cmdSetup number Spec_High OCP
+:read: OCP:SPEC:H?
+:write: OCP:SPEC:H
+:updatemodechange:
+:buttontext: Set
+:tip: Upper current limit for the GO/NG pass criteria.
+A 0 MaxCurrent
+
+#cmdSetup number Spec_Low OCP
+:read: OCP:SPEC:L?
+:write: OCP:SPEC:L
+:updatemodechange:
+:buttontext: Set
+:tip: Lower current limit for the GO/NG pass criteria.
+A 0 MaxCurrent
+
+#cmdSetup info Result OCP
+:read: OCP:RES?
+:readmath: getElement(unQuote(value),0,",")==-1?"Stopped":(getElement(unQuote(value),0,",")==-2?"Ready - waiting for Von or trigger":(getElement(unQuote(value),0,",")==-3?"Running":unQuote(value)))
+:updatemodechange:
+:layout:
+:tip: Sweep result: pass/fail flag, then the measured current and the maximum power. 0 is a pass, 1 a fail. Shows the state instead while the sweep is not producing a result.
+
+; =========================================================
+; OPP Settings
+; =========================================================
+#cmdSetup number Power_Start OPP
+:read: OPP:STAR?
+:write: OPP:STAR
+:updatemodechange:
+:buttontext: Set
+W 0 MaxPower
+
+#cmdSetup number Power_End OPP
+:read: OPP:END?
+:write: OPP:END
+:updatemodechange:
+:buttontext: Set
+W 0 MaxPower
+
+#cmdSetup numberInt Steps OPP
+:read: OPP:STEP?
+:write: OPP:STEP
+:updatemodechange:
+:buttontext: Set
+:tip: Number of steps the sweep is divided into.
+- 1 1000
+
+#cmdSetup number Dwell_Time OPP
+:read: OPP:DWEL?
+:write: OPP:DWEL
+:updatemodechange:
+:buttontext: Set
+s 0.0001 1
+
+#cmdSetup number Trigger_Voltage OPP
+:read: OPP:TRIG:VOLT?
+:write: OPP:TRIG:VOLT
+:updatemodechange:
+:buttontext: Set
+:tip: Sweep stops when the input drops below this voltage.
+V 0 MaxVoltage
+
+#cmdSetup number Spec_High OPP
+:read: OPP:SPEC:H?
+:write: OPP:SPEC:H
+:updatemodechange:
+:buttontext: Set
+:tip: Upper power limit for the GO/NG pass criteria.
+W 0 MaxPower
+
+#cmdSetup number Spec_Low OPP
+:read: OPP:SPEC:L?
+:write: OPP:SPEC:L
+:updatemodechange:
+:buttontext: Set
+:tip: Lower power limit for the GO/NG pass criteria.
+W 0 MaxPower
+
+#cmdSetup info Result OPP
+:read: OPP:RES?
+:readmath: getElement(unQuote(value),0,",")==-1?"Stopped":(getElement(unQuote(value),0,",")==-2?"Ready - waiting for Von or trigger":(getElement(unQuote(value),0,",")==-3?"Running":unQuote(value)))
+:updatemodechange:
+:layout:
+:tip: Sweep result: pass/fail flag, then the measured power and the maximum power. 0 is a pass, 1 a fail. Shows the state instead while the sweep is not producing a result.
+
+; =========================================================
+; Protection Settings (user-defined OCP/OPP trip limits)
+; =========================================================
+; Instrument-wide trip limits, independent of the selected mode. The Protection page
+; is named on every selector line, so this block sits below the mode's own settings on
+; whichever page is showing. Short closes the form at the very bottom.
+#cmdSetup separator - Protection
+6 100 Empty
+
+#cmdSetup separator - Protection
+3 100 Solid
+center Protection Settings
+
+; Protection status and reset. Without these a trip is invisible from TestController
+; and can only be cleared at the front panel.
+;
+; LOAD:PROT? is a bitmask. The decode below only names single-bit trips, using == and
+; nothing else: a readmath that throws (an unknown function, an undefined variable)
+; aborts syncAll and blanks the WHOLE form, so this stays deliberately plain. Anything
+; it cannot name falls through to the raw code, which is never misleading.
+; Only ONE code is named below, because only one has been measured: forcing an
+; over-current trip (CONF:OCP ON, limit 0.5 A, drawing 1.0 A) produces 32. An earlier
+; reading of the manual's bit table predicted 8 for the same event, so that table is
+; not trustworthy enough to decode from - every other code is shown as a raw number
+; rather than risk naming a trip wrongly.
+;
+; The manual lists 11 conditions across 16 bit positions and the PDF loses the column
+; alignment, so these are candidates to confirm one at a time by forcing each trip:
+;   OV1 OV2 REV OCP1 OCP2 OCP3 OPP1 OPP3 OTP FAN RMT_INH
+; A placement consistent with the measured 32 puts them at bits 2,3,4,5,6,7,8,10,11,13,15
+; but that is inference, not evidence. Add a name here only after tripping it for real.
+#cmdSetup info Protection Protection
+:read: LOAD:PROT?
+:readmath: value==0?"None":(value==32?"OCP - over current":value)
+:updatemodechange:
+:updatealloff:
+:layout:
+:tip: Protection status. "None" is healthy. 32 is a confirmed over-current trip; any other non-zero value is shown as the raw code - see the bit table in this driver's header. The load stays latched off until Clear Protection is pressed.
+
+; Real-time companion to Protection above. FETCh:STATus? reports the condition as it
+; is right now and clears itself when the condition goes away; LOAD:PROT? latches and
+; stays set until Clear Protection. Both are useful: the latched one says what tripped
+; the load, this one says whether the fault is still present.
+;
+; The manual prints the SAME bit table for both, so 32 is very likely over-current
+; here too - but that has only been measured on LOAD:PROT?, so nothing is named. Any
+; non-zero value shows as its raw code. Confirm by forcing a trip and reading both.
+#cmdSetup info Live_Status Protection
+:read: FETC:STAT?
+:readmath: value==0?"OK":value
+:updatemodechange:
+:updatealloff:
+:layout:
+:tip: Condition right now, as a raw status code - 0 is healthy. Unlike Protection this does not latch, so it returns to OK by itself once the fault clears. See the bit table in this driver's header.
+
+#cmdSetup button Clear_Protection Protection
+:write: LOAD:PROT:CLE
+:update: Protection
+:updatedelayed: 0.3
+:tip: Resets a tripped protection. The load stays latched off until this is done.
+
+#cmdSetup buttonsOn OCP_Protection Protection
+:read: CONF:OCP?
+:readmath: listIndex(unQuote(value),"DISABLE ENABLE"," ")
+:write: CONF:OCP
+:updatemodechange:
+Off 0
+On 1
+
+#cmdSetup number OCP_Limit Protection
+:read: CONF:OCP:POIN?
+:write: CONF:OCP:POIN
+:updatemodechange:
+:buttontext: Set
+A 0 MaxCurrent
+
+#cmdSetup number OCP_Delay Protection
+:read: CONF:OCP:DEL?
+:write: CONF:OCP:DEL
+:updatemodechange:
+:buttontext: Set
+s 0.001 20
+
+#cmdSetup buttonsOn OPP_Protection Protection
+:read: CONF:OPP?
+:readmath: listIndex(unQuote(value),"DISABLE ENABLE"," ")
+:write: CONF:OPP
+:updatemodechange:
+Off 0
+On 1
+
+#cmdSetup number OPP_Limit Protection
+:read: CONF:OPP:POIN?
+:write: CONF:OPP:POIN
+:updatemodechange:
+:buttontext: Set
+W 0 MaxPower
+
+#cmdSetup number OPP_Delay Protection
+:read: CONF:OPP:DEL?
+:write: CONF:OPP:DEL
+:updatemodechange:
+:buttontext: Set
+s 0.001 20
+
+#cmdSetup separator - Protection
+6 100 Empty
+
+; Which terminals the voltage measurement is taken from - matters as soon as remote
+; sense is wired to the UUT rather than the load input.
+#cmdSetup radio Measure_Input Protection
+:read: MEAS:INP?
+:readmath: listIndex(unQuote(value),"LOAD UUT"," ")
+:write: MEAS:INP
+:updatemodechange:
+:tip: Take the voltage measurement at the load terminals, or at the UUT via remote sense.
+Load 0
+UUT 1
+
+#cmdSetup buttonsOn Short Protection
+:read: LOAD:SHOR?
+:readmath: listIndex(unQuote(value),"OFF ON"," ")
+:write: LOAD:SHOR
+:tip: Short-circuit simulation. Turn this OFF before selecting OCP Test or OPP Test - the load refuses those modes while it is on.
+:updatemodechange:
+:color: (220,140,0)
+Off 0
+On 1
