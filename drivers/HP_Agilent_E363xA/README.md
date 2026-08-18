@@ -10,7 +10,7 @@ from the data sheet.
 | | |
 | --- | --- |
 | **Driver** | [`HP_Agilent_E363xA.txt`](HP_Agilent_E363xA.txt) |
-| **Revision** | 1.2 |
+| **Revision** | 1.3 |
 | **Interface** | GPIB, RS-232 |
 | **Instrument notes** | [`instrument-notes.md`](instrument-notes.md) |
 

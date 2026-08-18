@@ -12,8 +12,8 @@
 ;            manual-derived and not yet confirmed on hardware.
 ;            See instrument-notes.md beside this file.
 ;
-; Revision   1.2
-; Date       2026-08-17
+; Revision   1.3
+; Date       2026-08-18
 ; Author     Cyclotron
 ; License    MIT - see LICENSE
 ;
@@ -94,7 +94,7 @@
 #driver SCPIx
 #port comfixedbaud GPIB
 #baudrate 9600N82H
-#eol LF
+#eol \n
 #gpibReadEol eoi
 
 #interfaceType PS
