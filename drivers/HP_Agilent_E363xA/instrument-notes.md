@@ -98,6 +98,62 @@ RS-232 connector, and the manual warns against using RS-232 when those are confi
 
 ---
 
+## Using it over RS-232
+
+Verified against an E3633A: all 26 of the driver's read queries answer correctly over
+serial, with a clean error queue.
+
+Three things are easy to get wrong, and all three fail in exactly the same way — the
+port opens, writes appear to succeed, and nothing ever replies:
+
+- **The interface must be switched on the front panel** (`I/O Config` key). GPIB is the
+  factory default, only one interface is live at a time, and the choice is held in
+  non-volatile memory. Selecting RS-232 removes the supply from the GPIB bus until you
+  switch it back.
+- **The cable must be null-modem.** The supply is a DTE device and so is a PC, so it
+  needs a DTE-to-DTE crossover cable, DB-9 female on both ends. A straight-through
+  cable is silently inert.
+- **Stop bits are fixed at 2.** Baud is 300–9600 (9600 default); parity/data is none/8
+  (default), even/7 or odd/7. The driver's `SerialInit` sends the required `SYST:REM`
+  automatically, and only when the port is not GPIB.
+
+If you sweep baud rates hunting for the right setting, expect `+511,"RS-232 framing
+error"` in the queue afterwards and the front-panel **ERROR** annunciator lit. That is
+the wrong-baud bytes reaching the UART, not a fault — read the error queue empty to
+clear it.
+
+### Speed
+
+Measured at 9600 baud, and it is closer to GPIB than expected:
+
+| | RS-232 | GPIB |
+| :--- | ---: | ---: |
+| `MEAS:VOLT?` | 144.0 ms | 119.8 ms |
+| `VOLT?` (setpoint) | 72.6 ms | 54.5 ms |
+| All five logged channels | 495 ms | 399 ms |
+
+About **1.24× slower**, a roughly flat +20 ms per exchange. Over a 400-cycle soak the
+serial path sustained **1.96 readings/second** with all five channels, with 0 bad
+replies in 2000 queries and a p99 within 2 ms of the median.
+
+Note that a *measurement* costs about twice what a setpoint readback does on either
+transport, because `MEAS:` triggers a fresh conversion. Cost scales with the number of
+queries, so logging fewer channels is the way to log faster.
+
+### No inter-command delays are needed
+
+Some drivers for this family put a fixed ~20 ms delay after every command. Measured on
+this one, that is unnecessary on both transports:
+
+- 300 write-then-read cycles on the setpoint at 0 ms settling: **zero** mismatched
+  readbacks, no queued errors. Same at 5/10/20/50 ms.
+- 40 `VOLT:RANG` changes read back at 0 ms settling: **zero** wrong values.
+- 120 randomised GPIB address switches with no settling: zero bad replies.
+
+So a readback taken immediately after a write reflects the write.
+
+---
+
 ## The front-panel "Display Limit" key has no remote equivalent
 
 The whole `DISPlay` subsystem is `DISP` (on/off), `DISP:STAT`, `DISP:TEXT` and
