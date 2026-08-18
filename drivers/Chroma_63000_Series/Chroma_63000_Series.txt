@@ -10,8 +10,8 @@
 ;            every per-range limit checked against the instrument, not the
 ;            datasheet. See instrument-notes.md beside this file.
 ;
-; Revision   1.0
-; Date       2026-08-16
+; Revision   1.1
+; Date       2026-08-17
 ; Author     Cyclotron
 ; License    MIT - see LICENSE
 ;
@@ -20,7 +20,7 @@
 
 #metadef
 #idString Chroma,63003-150-40
-#name Chroma 63003-150-40 Electronic Load
+#name Chroma 63003-150-40
 #handle Chroma63003
 #replaceText MaxPower 250
 #replaceText MaxVoltage 150
@@ -49,7 +49,7 @@
 
 #metadef
 #idString Chroma,63004-150-60
-#name Chroma 63004-150-60 Electronic Load
+#name Chroma 63004-150-60
 #handle Chroma63004
 #replaceText MaxPower 350
 #replaceText MaxVoltage 150
@@ -78,7 +78,7 @@
 
 #meta
 #idString Chroma,630
-#name Chroma 63000 Series Electronic Load
+#name Chroma 63000 Series
 #handle Chroma63000
 #port 1234 com GPIB LXI
 #baudrate 115200

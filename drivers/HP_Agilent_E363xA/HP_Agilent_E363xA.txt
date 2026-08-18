@@ -1,0 +1,607 @@
+; HP / Agilent / Keysight E363xA DC Power Supplies - TestController driver
+;
+; Coverage   E3632A (15V/7A and 30V/4A), E3633A (8V/20A and 20V/10A) and
+;            E3634A (25V/7A and 50V/4A). Both output ranges, with the setpoint
+;            ceilings following the selected range. Overvoltage and overcurrent
+;            protection, triggered setpoints, stepped adjustment, three stored
+;            states and front-panel display control.
+;
+; Verified   Against an E3633A (firmware 1.6-5.0-1.0) over GPIB. Every command
+;            exercised, and every range ceiling read back from the instrument
+;            rather than from the data sheet. The E3632A and E3634A limits are
+;            manual-derived and not yet confirmed on hardware.
+;            See instrument-notes.md beside this file.
+;
+; Revision   1.0
+; Date       2026-08-17
+; Author     Cyclotron
+; License    MIT - see LICENSE
+;
+; TestController by HKJ: https://lygte-info.dk/project/TestControllerIntro%20UK.html
+; Discussion: https://www.eevblog.com/forum/index.php?topic=234726.0
+
+#metadef
+#idString HEWLETT-PACKARD,E3632A,
+#name HP E3632A
+#handle HPE3632A
+#replaceText LowRangeName 15V_7A
+#replaceText HighRangeName 30V_4A
+#replaceText LowVoltageMax 15.45
+#replaceText LowCurrentMax 7.21
+#replaceText HighVoltageMax 30.90
+#replaceText HighCurrentMax 4.12
+#replaceText OVPMax 32
+#replaceText OCPMax 7.5
+#replaceText VoltageStepMin 0.00055
+#replaceText CurrentStepMin 0.00012
+
+#metadef
+#idString HEWLETT-PACKARD,E3633A,
+#name HP E3633A
+#handle HPE3633A
+#replaceText LowRangeName 8V_20A
+#replaceText HighRangeName 20V_10A
+#replaceText LowVoltageMax 8.24
+#replaceText LowCurrentMax 20.60
+#replaceText HighVoltageMax 20.60
+#replaceText HighCurrentMax 10.30
+#replaceText OVPMax 22
+#replaceText OCPMax 22
+; Step floors, read back from the hardware: VOLT:STEP? = 0.0003644277 and
+; CURR:STEP? = 0.0003802001. They are rounded DOWN to the six decimals the
+; :format: D6 on those fields displays. Rounding up instead puts the minimum
+; above the value the field shows for the instrument's own default step, and
+; both fields come up red the moment Smallest Step is pressed. The 0.00032 used
+; for current before this came from the data sheet, below what it resolves.
+#replaceText VoltageStepMin 0.000364
+#replaceText CurrentStepMin 0.000380
+
+#metadef
+#idString HEWLETT-PACKARD,E3634A,
+#name HP E3634A
+#handle HPE3634A
+#replaceText LowRangeName 25V_7A
+#replaceText HighRangeName 50V_4A
+#replaceText LowVoltageMax 25.75
+#replaceText LowCurrentMax 7.21
+#replaceText HighVoltageMax 51.50
+#replaceText HighCurrentMax 4.12
+#replaceText OVPMax 55
+#replaceText OCPMax 7.5
+#replaceText VoltageStepMin 0.00095
+#replaceText CurrentStepMin 0.00013
+
+#meta
+#idString HEWLETT-PACKARD,E3632A,
+#name HP E363xA
+#handle HPE363xA
+
+#replaceText LowRangeName 15V_7A
+#replaceText HighRangeName 30V_4A
+#replaceText LowVoltageMax 15.45
+#replaceText LowCurrentMax 7.21
+#replaceText HighVoltageMax 30.90
+#replaceText HighCurrentMax 4.12
+#replaceText OVPMax 32
+#replaceText OCPMax 7.5
+#replaceText VoltageStepMin 0.00055
+#replaceText CurrentStepMin 0.00012
+
+#author Cyclotron
+#notes Dual-range E3632A, E3633A and E3634A DC supply. Tabs for Main, Fine Adjust, Protection, Trigger and Utility; the setpoint ceilings follow the selected output range. E3633A command set and range limits are live-verified; E3632A and E3634A limits are manual-derived.
+
+#driver SCPIx
+#port comfixedbaud GPIB
+#baudrate 9600N82H
+#eol LF
+#gpibReadEol eoi
+
+#interfaceType PS
+
+; The supply returns one response per query. TestController sends semicolon-separated
+; #askValues entries as independent commands, matching the live GPIB validation.
+;
+; Five channels are logged rather than the obvious two, because a test cannot
+; usually be re-run to recover a value nobody thought to record:
+;
+;   Voltage / Current       what the terminals are actually doing (MEAS:)
+;   VoltageSet / CurrentSet what the supply was asked for (VOLT? / CURR?)
+;   Regulation              which side the supply is regulating on
+;
+; Charting the measured value against its setpoint shows the output sagging away
+; from the demand under load, which neither one alone reveals. Regulation catches
+; the moment a load pulls the supply out of constant voltage into constant
+; current - usually the point of the test, and invisible from voltage and current
+; alone when the limit happens to sit where the load settles. It is logged as the
+; raw register value so it charts as steps:
+;     0 = output off or unregulated   1 = constant current
+;     2 = constant voltage            3 = regulation fault
+; The bits are not latched, so this is the live state at each reading.
+;
+; The cost is five GPIB round trips per reading instead of two. That is hidden by
+; #readingDelay 2; drop that delay for fast logging and it becomes the limit.
+#askValues MEAS:VOLT?;MEAS:CURR?;VOLT?;CURR?;STAT:QUES:COND?
+#value Voltage V D4
+#value Current A D4
+#value VoltageSet V D4
+#value CurrentSet A D4
+#value Regulation - D0
+#readingDelay 2
+
+; SYST:REM/SYST:LOC are valid only for RS-232 on this family.
+#scpiCmd SerialInit #pgm#
+if (portType!="GPIB")
+  deviceWrite(handle,"SYST:REM");
+endif;
+
+#scpiCmd SerialExit #pgm#
+if (portType!="GPIB")
+  deviceWrite(handle,"SYST:LOC");
+endif;
+
+; SCPIx sends this interface-control token only for a GPIB connection.
+#scpiCmd GpibExit
+[LOC]
+
+; Quote the user text required by DISP:TEXT while keeping the setup control simple.
+#scpiCmd SetDisplayText tx DISP:TEXT "(value)"
+
+#initCmd SerialInit;
+#finalCmd OUTP OFF;[*OPC];SerialExit;GpibExit
+#outputOff OUTP OFF
+
+; Generic TestController power-supply interface.
+#interface setVoltage VOLT (value)
+#interface setCurrent CURR (value)
+#interface setOn OUTP (value)
+#interface getVoltage VOLT?
+#interface getCurrent CURR?
+#interface getOn OUTP?
+#interface readVoltage 0
+#interface readCurrent 1
+
+; ==============================================================================
+; The whole dialog, in the order the supply gets used
+; ==============================================================================
+; Only the setpoint and pending-setpoint pages differ between the two rows; every
+; other page is shared, so the layout does not move when the range changes.
+
+; A single button showing the state it is in, the way the instrument's own output
+; key does: grey when off, green when on.
+;
+; No tag sets a button's size - :labelformat: explicitly excludes buttons and
+; :textwidth: only affects input fields - so the button sizes to its label.
+; :nogrid: would additionally free it from the form's column grid; it is
+; undocumented but used by 55 of the toggleButtons in the shipped drivers. Left
+; off so the button aligns with the controls below it, matching the Chroma.
+;
+; The two labels differ by one character, so the button may shift very slightly as
+; it toggles - the docs warn a toggleButton resizes with its label. Padding them to
+; equal length only worked by adding a visible character, which was worse.
+
+#cmdSetup toggleButton Output Main
+:read: OUTP?
+:write: OUTP (value)
+:updatedelayed: 0.2
+:updatealloff:
+:color: gray green
+:tip: Enable or disable the DC output. One click toggles it - the button shows the state the output is in now.
+OUTPUT_OFF 0
+OUTPUT_ON 1
+
+#cmdSetup radio Output_Range Main
+:read: VOLT:RANG?
+:readmath: replaceRX(replaceRX(trim(unQuote(value)),"P(8|15|25)V","LOW"),"P(20|30|50)V","HIGH")
+:write: OUTP OFF;[*OPC];VOLT:RANG (value);[*OPC]
+:string:
+:updatedelayed: 0.3
+:update: Output Voltage Current_Limit Pending_Voltage Pending_Current
+:tip: Selects the output range. The Voltage and Current Limit ceilings follow this setting. Changing range always switches the output off first.
+LowRangeName LOW
+HighRangeName HIGH
+
+#cmdSetup separator - Main
+6 100 Empty
+
+#cmdSetup separator - Main
+1 100 Sunken
+
+#cmdSetup separator - Main
+:labelformat: bold (80,80,80)
+1 100 Empty
+center Setpoints
+
+#cmdSetup separator - Main
+1 100 Sunken
+
+#cmdSetup advNumber Voltage Main
+:read: VOLT?
+:write: VOLT
+:updatedelayed: 0.2
+:format: D4
+:buttontext: Set
+:tip: Output voltage. The supply holds this until the load reaches the current limit.
+V 0 inList(Main.Output_Range,"LOW,0")?LowVoltageMax:HighVoltageMax
+
+#cmdSetup advNumber Current_Limit Main
+:read: CURR?
+:write: CURR
+:updatedelayed: 0.2
+:format: D4
+:buttontext: Set
+:tip: Current limit. Reaching it moves the supply into constant current, and the output voltage then falls to whatever sustains this current.
+A 0 inList(Main.Output_Range,"LOW,0")?LowCurrentMax:HighCurrentMax
+
+#cmdSetup separator - Main
+6 100 Empty
+
+#cmdSetup separator - Main
+1 100 Sunken
+
+#cmdSetup separator - Main
+:labelformat: bold (80,80,80)
+1 100 Empty
+center Status
+
+#cmdSetup separator - Main
+1 100 Sunken
+
+#cmdSetup indicator Temperature Main
+:read: STAT:QUES:COND?
+:tip: Overtemperature shutdown. Check ventilation and the fan if this lights.
+Normal (int(value)&16)==0 green
+Overtemperature (int(value)&16)!=0 red
+
+; ------------------------------------------------------- triggered setpoints
+; Stage a voltage/current pair and apply it on a trigger, for a timed or
+; synchronised step rather than an immediate change.
+
+#cmdSetup separator - Main
+6 100 Empty
+
+#cmdSetup separator - Main
+1 100 Sunken
+
+#cmdSetup separator - Main
+:labelformat: bold (80,80,80)
+1 100 Empty
+center Memory
+
+#cmdSetup separator - Main
+1 100 Sunken
+
+#cmdSetup buttons Save_State Main
+:write: *SAV #;[*OPC]
+:tip: Store voltage, current, range, output state, protection, trigger, display and step settings in nonvolatile memory.
+Slot_1 1
+Slot_2 2
+Slot_3 3
+
+#cmdSetup buttons Recall_State Main
+:write: *RCL #;[*OPC]
+:updatedelayed: 0.3
+:update: Output Voltage Current_Limit Pending_Voltage Pending_Current
+:tip: Recall a stored state. Careful - a stored state can include Output ON, so the supply may start sourcing as soon as it is recalled.
+Slot_1 1
+Slot_2 2
+Slot_3 3
+
+#cmdSetup separator - Main
+6 100 Empty
+
+#cmdSetup separator - Main
+1 100 Sunken
+
+#cmdSetup separator - Main
+:labelformat: bold (80,80,80)
+1 100 Empty
+center Front Panel
+
+#cmdSetup separator - Main
+1 100 Sunken
+
+#cmdSetup buttonsOn Display Main
+:read: DISP?
+:write: DISP
+:updatedelayed: 0.2
+:tip: Turn the front-panel display on or off. Returning the instrument to local control turns it back on.
+Off 0
+On 1
+
+#cmdSetup text Display_Message Main
+:read: DISP:TEXT?
+:readmath: unQuote(value)
+:write: SetDisplayText
+:tip: Show up to 12 characters on the front panel.
+12
+
+#cmdSetup button Clear_Display_Message Main
+:write: DISP:TEXT:CLE
+:updatedelayed: 0.2
+:update: Display_Message
+:tip: Remove the message and return the display to the normal readout.
+
+#cmdSetup separator - Fine_Adjust
+1 100 Sunken
+
+#cmdSetup separator - Fine_Adjust
+:labelformat: bold (80,80,80)
+1 100 Empty
+center Voltage
+
+#cmdSetup separator - Fine_Adjust
+1 100 Sunken
+
+#cmdSetup number Voltage_Step Fine_Adjust
+:read: VOLT:STEP?
+:write: VOLT:STEP
+:format: D6
+:buttontext: Set
+:tip: Amount each Voltage Down/Up press moves the output voltage.
+V VoltageStepMin HighVoltageMax
+
+#cmdSetup button Smallest_Voltage_Step Fine_Adjust
+:write: VOLT:STEP DEF
+:updatedelayed: 0.2
+:update: Voltage_Step
+:tip: Set the step to the instrument's finest voltage resolution.
+
+#cmdSetup buttons Voltage_Adjust Fine_Adjust
+:write: VOLT
+:updatedelayed: 0.2
+:update: Voltage
+:tip: Move the output voltage down or up by one step. The supply refuses a move that would leave the selected range.
+Down DOWN
+Up UP
+
+#cmdSetup separator - Fine_Adjust
+6 100 Empty
+
+#cmdSetup separator - Fine_Adjust
+1 100 Sunken
+
+#cmdSetup separator - Fine_Adjust
+:labelformat: bold (80,80,80)
+1 100 Empty
+center Current
+
+#cmdSetup separator - Fine_Adjust
+1 100 Sunken
+
+#cmdSetup number Current_Step Fine_Adjust
+:read: CURR:STEP?
+:write: CURR:STEP
+:format: D6
+:buttontext: Set
+:tip: Amount each Current Down/Up press moves the current limit.
+A CurrentStepMin HighCurrentMax
+
+#cmdSetup button Smallest_Current_Step Fine_Adjust
+:write: CURR:STEP DEF
+:updatedelayed: 0.2
+:update: Current_Step
+:tip: Set the step to the instrument's finest current resolution.
+
+#cmdSetup buttons Current_Adjust Fine_Adjust
+:write: CURR
+:updatedelayed: 0.2
+:update: Current_Limit
+:tip: Move the current limit down or up by one step. The supply refuses a move that would leave the selected range.
+Down DOWN
+Up UP
+
+; ------------------------------------------------------------------ protection
+
+#cmdSetup separator - Protection
+1 100 Sunken
+
+#cmdSetup separator - Protection
+:labelformat: bold (80,80,80)
+1 100 Empty
+center Overvoltage
+
+#cmdSetup separator - Protection
+1 100 Sunken
+
+#cmdSetup number OVP_Limit Protection
+:read: VOLT:PROT?
+:write: VOLT:PROT
+:updatedelayed: 0.2
+:update: OVP_Tripped
+:format: D3
+:buttontext: Set
+:tip: Overvoltage threshold. A trip disables the output and fires the crowbar, so set it above your working voltage with margin.
+V 1 OVPMax
+
+#cmdSetup buttonsOn OVP_Enable Protection
+:read: VOLT:PROT:STAT?
+:write: VOLT:PROT:STAT
+:updatedelayed: 0.2
+:update: OVP_Tripped
+:tip: Arm or disarm overvoltage protection.
+Off 0
+On 1
+
+#cmdSetup indicator OVP_Tripped Protection
+:read: VOLT:PROT:TRIP?
+:tip: Lights when overvoltage protection has fired. The output stays off until the trip is cleared.
+Clear 0 green
+Tripped int(value)==1 red
+
+#cmdSetup button Clear_OVP_Trip Protection
+:write: VOLT:PROT:CLE;[*OPC]
+:updatedelayed: 0.2
+:update: OVP_Tripped Output
+:tip: Clear an overvoltage trip. Lower the voltage setpoint or raise the threshold first, or it will trip again.
+
+#cmdSetup separator - Protection
+6 100 Empty
+
+#cmdSetup separator - Protection
+1 100 Sunken
+
+#cmdSetup separator - Protection
+:labelformat: bold (80,80,80)
+1 100 Empty
+center Overcurrent
+
+#cmdSetup separator - Protection
+1 100 Sunken
+
+#cmdSetup number OCP_Limit Protection
+:read: CURR:PROT?
+:write: CURR:PROT
+:updatedelayed: 0.2
+:update: OCP_Tripped
+:format: D3
+:buttontext: Set
+:tip: Overcurrent threshold. A trip programs the output current to zero. This is separate from the Current Limit above, which regulates rather than trips.
+A 0 OCPMax
+
+#cmdSetup buttonsOn OCP_Enable Protection
+:read: CURR:PROT:STAT?
+:write: CURR:PROT:STAT
+:updatedelayed: 0.2
+:update: OCP_Tripped
+:tip: Arm or disarm overcurrent protection.
+Off 0
+On 1
+
+#cmdSetup indicator OCP_Tripped Protection
+:read: CURR:PROT:TRIP?
+:tip: Lights when overcurrent protection has fired.
+Clear 0 green
+Tripped int(value)==1 red
+
+#cmdSetup button Clear_OCP_Trip Protection
+:write: CURR:PROT:CLE;[*OPC]
+:updatedelayed: 0.2
+:update: OCP_Tripped Output
+:tip: Clear an overcurrent trip. Reduce the load or raise the threshold first, or it will trip again.
+
+#cmdSetup separator - Trigger
+1 100 Sunken
+
+#cmdSetup separator - Trigger
+:labelformat: bold (80,80,80)
+1 100 Empty
+center Source
+
+#cmdSetup separator - Trigger
+1 100 Sunken
+
+#cmdSetup radio Trigger_Source Trigger
+:read: TRIG:SOUR?
+:write: TRIG:SOUR
+:string:
+:updatedelayed: 0.2
+:tip: Bus waits for Trigger Now after Arm. Immediate applies the pending values as soon as Arm is pressed.
+Bus BUS
+Immediate IMM
+
+#cmdSetup number Trigger_Delay Trigger
+:read: TRIG:DEL?
+:write: TRIG:DEL
+:format: D3
+:buttontext: Set
+:tip: Delay between the trigger and the pending values being applied. Ignored when the source is Immediate.
+s 0 3600
+
+#cmdSetup separator - Trigger
+6 100 Empty
+
+#cmdSetup separator - Trigger
+1 100 Sunken
+
+#cmdSetup separator - Trigger
+:labelformat: bold (80,80,80)
+1 100 Empty
+center Pending Setpoints
+
+#cmdSetup separator - Trigger
+1 100 Sunken
+
+#cmdSetup advNumber Pending_Voltage Trigger
+:read: VOLT:TRIG?
+:write: VOLT:TRIG
+:format: D4
+:buttontext: Set
+:tip: Voltage that a trigger will transfer to the live setpoint.
+V 0 inList(Main.Output_Range,"LOW,0")?LowVoltageMax:HighVoltageMax
+
+#cmdSetup advNumber Pending_Current Trigger
+:read: CURR:TRIG?
+:write: CURR:TRIG
+:format: D4
+:buttontext: Set
+:tip: Current limit that a trigger will transfer to the live setpoint.
+A 0 inList(Main.Output_Range,"LOW,0")?LowCurrentMax:HighCurrentMax
+
+#cmdSetup separator - Trigger
+6 100 Empty
+
+#cmdSetup separator - Trigger
+1 100 Sunken
+
+#cmdSetup separator - Trigger
+:labelformat: bold (80,80,80)
+1 100 Empty
+center Apply
+
+#cmdSetup separator - Trigger
+1 100 Sunken
+
+#cmdSetup button Arm Trigger
+:write: INIT
+:updatedelayed: 0.2
+:update: Voltage Current_Limit
+:tip: Arm the trigger. With source Bus the supply then waits for Trigger Now; with Immediate the pending values are applied at once.
+
+#cmdSetup button Trigger_Now Trigger
+:write: *TRG;*WAI
+:updatedelayed: 0.2
+:update: Voltage Current_Limit
+:tip: Fire the bus trigger, applying the pending setpoints. Only has an effect after Arm, with the source set to Bus.
+
+#cmdSetup button Beep Utility
+:write: SYST:BEEP
+:tip: Sound the beeper once - handy for identifying which supply on the bench you are talking to.
+
+#cmdSetup separator - Utility
+6 100 Empty
+
+#cmdSetup separator - Utility
+1 100 Sunken
+
+#cmdSetup separator - Utility
+:labelformat: bold (80,80,80)
+1 100 Empty
+center Diagnostics
+
+#cmdSetup separator - Utility
+1 100 Sunken
+
+#cmdSetup infoAsk Identity Utility
+:read: *IDN?
+:buttontext: Read ID
+:tip: Manufacturer, model, serial field and firmware revisions.
+
+#cmdSetup infoAsk SCPI_Version Utility
+:read: SYST:VERS?
+:buttontext: Read Version
+:tip: The SCPI language version this instrument implements.
+
+#cmdSetup infoAsk Last_Error Utility
+:read: SYST:ERR?
+:buttontext: Pop Error
+:tip: Read and remove the oldest entry from the error queue. Note a rejected query on this family reports its error one command late.
+
+#cmdSetup infoAsk Status_Byte Utility
+:read: *STB?
+:buttontext: Read STB
+:tip: Read the Status Byte without clearing its Request Service bit.
+
+#cmdSetup infoAsk Questionable_Enable Utility
+:read: STAT:QUES:ENAB?
+:buttontext: Read Mask
+:tip: Read the Questionable Status enable mask without clearing event bits.
