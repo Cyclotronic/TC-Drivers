@@ -10,7 +10,7 @@
 ;            every per-range limit checked against the instrument, not the
 ;            datasheet. See instrument-notes.md beside this file.
 ;
-; Revision   1.1
+; Revision   1.2
 ; Date       2026-08-17
 ; Author     Cyclotron
 ; License    MIT - see LICENSE
@@ -46,6 +46,11 @@
 #replaceText SlewMmax 0.2
 #replaceText SlewHmin 0.01
 #replaceText SlewHmax 2
+; Protection points sit ABOVE the rated maximum. Measured 2% and 3% headroom on a
+; 63004; these are the same proportions applied to the 63003 and are NOT confirmed
+; on hardware.
+#replaceText OCPPointMax 40.8
+#replaceText OPPPointMax 257.5
 
 #metadef
 #idString Chroma,63004-150-60
@@ -75,6 +80,11 @@
 #replaceText SlewMmax 0.3
 #replaceText SlewHmin 0.01
 #replaceText SlewHmax 3
+; Protection points sit ABOVE the rated 60 A / 350 W, read back from the load:
+; CONF:OCP:POIN? MAX = 61.2 and CONF:OPP:POIN? MAX = 360.5. Capping these at the
+; rated maximum instead makes the instrument's own setting show as out of range.
+#replaceText OCPPointMax 61.2
+#replaceText OPPPointMax 360.5
 
 #meta
 #idString Chroma,630
@@ -216,23 +226,41 @@ OPPH Info. OPP. Protection.
 :updatemodechange:
 :layout:
 
-#cmdSetup buttonsOn Load Info
+; One button carrying its own state, the way the instrument's LOAD key does: grey
+; when off, green when on. Same design as the Output control on the E363xA driver.
+;
+; LOAD? answers OFF/ON while toggleButton needs a state index, so the listIndex
+; readmath stays - the supply's OUTP? returns 0/1 and needs no such conversion.
+;
+; No tag sets a button's size: :labelformat: excludes buttons and :textwidth: is for
+; input fields, so the button sizes to its label. :nogrid: would free it from the
+; form's column grid; it is left off here so the button lines up with the controls
+; below it.
+#cmdSetup toggleButton Load Info
 :read: LOAD?
 :readmath: listIndex(unQuote(value),"OFF ON"," ")
-:write: LOAD
+:write: LOAD (value)
 :updatealloff:
 :updatemodechange:
-:color: (0,200,0)
-Off 0
-On 1
+:color: gray green
+:tip: Switch the load input on or off. One click toggles it - the button shows the state the load is in now.
+LOAD_OFF 0
+LOAD_ON 1
 
 ; Heading for the selected mode's own settings, which the selector inserts next.
 #cmdSetup separator - Info
 6 100 Empty
 
 #cmdSetup separator - Info
-3 100 Solid
+1 100 Sunken
+
+#cmdSetup separator - Info
+:labelformat: bold (80,80,80)
+1 100 Empty
 center Mode Settings
+
+#cmdSetup separator - Info
+1 100 Sunken
 
 ; =========================================================
 ; CC Settings
@@ -1013,8 +1041,15 @@ W 0 MaxPower
 6 100 Empty
 
 #cmdSetup separator - Protection
-3 100 Solid
+1 100 Sunken
+
+#cmdSetup separator - Protection
+:labelformat: bold (80,80,80)
+1 100 Empty
 center Protection Settings
+
+#cmdSetup separator - Protection
+1 100 Sunken
 
 ; Protection status and reset. Without these a trip is invisible from TestController
 ; and can only be cleared at the front panel.
@@ -1077,7 +1112,7 @@ On 1
 :write: CONF:OCP:POIN
 :updatemodechange:
 :buttontext: Set
-A 0 MaxCurrent
+A 0 OCPPointMax
 
 #cmdSetup number OCP_Delay Protection
 :read: CONF:OCP:DEL?
@@ -1099,7 +1134,7 @@ On 1
 :write: CONF:OPP:POIN
 :updatemodechange:
 :buttontext: Set
-W 0 MaxPower
+W 0 OPPPointMax
 
 #cmdSetup number OPP_Delay Protection
 :read: CONF:OPP:DEL?

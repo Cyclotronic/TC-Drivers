@@ -112,6 +112,22 @@ stopped, `-2,-2,-2` when waiting for Von or a trigger, and `-3,-3,-3` while runn
 
 ---
 
+## Protection points sit above the rated maximum
+
+`CONF:OCP:POINt` and `CONF:OPP:POINt` accept values **above** the model's rated output.
+On a 63004-150-60, rated 60 A and 350 W:
+
+    CONF:OCP:POIN? MAX  ->  61.2
+    CONF:OPP:POIN? MAX  ->  360.5
+
+Roughly 2% and 3% of headroom. A driver that caps these at the rated figure shows the
+instrument's own factory setting as out of range.
+
+The manual only says "refer to respective specification for valid value range", so the
+instrument is the authority — query `? MAX` rather than assuming.
+
+---
+
 ## Protection status
 
 `LOAD:PROT?` latches and stays set until `LOAD:PROT:CLE`. `FETC:STAT?` reports the
