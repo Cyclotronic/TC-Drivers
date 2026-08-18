@@ -116,6 +116,12 @@ port opens, writes appear to succeed, and nothing ever replies:
 - **Stop bits are fixed at 2.** Baud is 300–9600 (9600 default); parity/data is none/8
   (default), even/7 or odd/7. The driver's `SerialInit` sends the required `SYST:REM`
   automatically, and only when the port is not GPIB.
+- **Do not enable hardware flow control.** The driver uses `#baudrate 9600N82D` — `D`
+  asserts DTR and leaves flow control off. On a null-modem cable our DTR drives the
+  supply's DSR, which is what the manual prescribes for running without the handshake
+  ("tie the DSR line to logic TRUE"). With hardware flow control the command goes out
+  correctly but the supply never replies. Measured: no flow control and a DTR/DSR
+  handshake both gave 500 clean queries; RTS/CTS timed out every time.
 
 If you sweep baud rates hunting for the right setting, expect `+511,"RS-232 framing
 error"` in the queue afterwards and the front-panel **ERROR** annunciator lit. That is
@@ -135,6 +141,20 @@ Measured at 9600 baud, and it is closer to GPIB than expected:
 About **1.24× slower**, a roughly flat +20 ms per exchange. Over a 400-cycle soak the
 serial path sustained **1.96 readings/second** with all five channels, with 0 bad
 replies in 2000 queries and a p99 within 2 ms of the median.
+
+**Remote mode makes the supply 1.8× faster.** Servicing the front panel costs real
+time, and `SYST:REM` disables it:
+
+| | `MEAS:VOLT?` | Five channels |
+| :--- | ---: | ---: |
+| Local (front panel live) | 222.1 ms | 909.5 ms |
+| Remote (`SYST:REM`) | 146.0 ms | 502.7 ms |
+
+The driver sends `SYST:REM` on connect, so logging gets the fast path. It matters
+mainly when interpreting a measurement taken before the driver has initialised — TC's
+identification scan runs first, so `*IDN?` is answered in local mode. (It *is* answered:
+`SYST:REM` is not required in order to get a reply, despite the manual's warning about
+communicating outside remote mode.)
 
 Note that a *measurement* costs about twice what a setpoint readback does on either
 transport, because `MEAS:` triggers a fresh conversion. Cost scales with the number of

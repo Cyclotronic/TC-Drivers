@@ -93,7 +93,7 @@
 
 #driver SCPIx
 #port comfixedbaud GPIB
-#baudrate 9600N82H
+#baudrate 9600N82D
 #eol \n
 #gpibReadEol eoi
 
