@@ -9,7 +9,7 @@ than copied from the datasheet.
 | | |
 | --- | --- |
 | **Driver** | [`Chroma_63000_Series.txt`](Chroma_63000_Series.txt) |
-| **Revision** | 1.2 |
+| **Revision** | 1.3 |
 | **Interface** | GPIB, LXI, serial |
 | **Instrument notes** | [`instrument-notes.md`](instrument-notes.md) |
 
