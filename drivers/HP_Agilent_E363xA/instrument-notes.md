@@ -1,7 +1,7 @@
 # HP / Agilent / Keysight E363xA — instrument notes
 
-Behaviour of the E363xA command set that is not obvious from the manual, found while
-building the driver and verifying it against an E3633A (firmware 1.6-5.0-1.0) over GPIB.
+Behaviour of the E363xA supplies worth knowing when using this driver. These are
+characteristics of the instrument and the driver's design, not of TestController.
 
 ---
 
@@ -21,25 +21,19 @@ which side the hardware is on:
 | 3 | Regulation fault |
 
 Those bits are **not latched**, so each reading is the live state. The driver exposes
-this both as the `Regulation` value channel and as a readout.
-
-Any driver offering CV and CC as selectable *modes* is writing the same `VOLT`/`CURR`
-registers under two names.
+this both as the `Regulation` logged channel and as a readout.
 
 ---
 
 ## The supply does not enforce its own range
 
 Setpoints are validated against the **model** maximum, not the selected range. On an
-E3633A this is accepted without error:
+E3633A, `VOLT 15` in the 8 V range and `CURR 15` in the 20 V range are both accepted
+without error; only values beyond the model maximum are rejected (`-222,"Data out of
+range"`).
 
-- in the **8 V** range: `VOLT 15` — above the 8.24 V ceiling
-- in the **20 V** range: `CURR 15` — above the 10.3 A ceiling
-
-Only values beyond the model maximum are rejected (`-222,"Data out of range"`).
-
-This is why the driver carries per-range ceilings. Offering the model's full span lets a
-value be set that the active range cannot deliver, silently.
+The driver therefore carries per-range ceilings and shows them beside each setpoint
+field, so a value the active range cannot deliver cannot be entered by accident.
 
 | E3633A | Voltage | Current |
 | --- | --- | --- |
@@ -49,34 +43,10 @@ value be set that the active range cannot deliver, silently.
 
 ---
 
-## A rejected query reports its error one command late
-
-A query the supply rejects leaves a pending unread response. Its
-`-420,"Query UNTERMINATED"` then surfaces on the **next** error read, not its own.
-
-When probing this family, read `SYST:ERR?` after every single query — otherwise the
-blame lands on the following command and a healthy command looks broken. A failure on
-the first query of a run is usually a stale queue entry rather than a real fault.
-
----
-
-## Step queries reject MIN, MAX and DEF
-
-`VOLT:STEP DEF` is a valid *setting*, but `VOLT:STEP? DEF` — and `? MIN` and `? MAX` —
-are not valid queries. Only the bare `VOLT:STEP?` and `CURR:STEP?` work.
-
-`VOLT? MAX` and `CURR? MAX` *do* work, and follow the selected range, which is how the
-ceilings above were measured.
-
-The instrument's own finest steps are 0.0003644 V and 0.0003802 A.
-
----
-
 ## Changing range switches the output off
 
-`VOLT:RANG` turns the output off before changing. The driver does this explicitly rather
-than relying on it, so a low-range high-current setup is never carried into high-range
-voltage conditions.
+`VOLT:RANG` turns the output off before changing. The driver does this explicitly, so a
+low-range high-current setup is never carried into high-range voltage conditions.
 
 Switching to a range with a lower ceiling also **clips** the existing setpoint — going to
 P20V with the current set to 20 A leaves it at 10.3 A, and switching back does not
@@ -84,11 +54,49 @@ restore it.
 
 ---
 
+## Step queries reject MIN, MAX and DEF
+
+`VOLT:STEP DEF` is a valid *setting*, but `VOLT:STEP? DEF` — and `? MIN` and `? MAX` —
+are not valid queries. Only the bare `VOLT:STEP?` and `CURR:STEP?` work. `VOLT? MAX` and
+`CURR? MAX` do work and follow the selected range. The instrument's finest steps are
+0.0003644 V and 0.0003802 A.
+
+---
+
+## Logged channels and the two logging modes
+
+Logging scope is selected from the **mode menu**:
+
+- **Log All** — Voltage, Current, VoltageSet, CurrentSet, Regulation (five channels)
+- **Log V and I only** — Voltage and Current (two channels)
+
+| Channel | Source | Meaning |
+| --- | --- | --- |
+| `Voltage`, `Current` | `MEAS:VOLT?`, `MEAS:CURR?` | what the terminals are doing |
+| `VoltageSet`, `CurrentSet` | `VOLT?`, `CURR?` | what the supply was asked for |
+| `Regulation` | `STAT:QUES:COND?` | which side it is regulating on |
+
+Charting a measurement against its setpoint shows the output sagging away from the demand
+under load. `Regulation` catches the moment a load pulls the supply from constant voltage
+into constant current, which is invisible from voltage and current alone.
+
+**Log All** is the default and suits a single supply. Switch to **Log V and I only** when
+several instruments share one logging interval and the full five-channel cycle no longer
+fits the interval. Logging scope is a mode rather than a checkbox on purpose:
+TestController locks the mode while a log is running, so the set of columns cannot change
+partway through a log.
+
+A `MEAS:` query costs about twice a setpoint readback, because it triggers a fresh
+conversion, so logging fewer channels is the way to log faster.
+
+---
+
 ## Remote and local
 
 GPIB and RS-232 are both built in, but only one is enabled at a time from the front
 panel. `SYST:REM` and `SYST:LOC` are **RS-232 only** — sending them over GPIB returns
-`+514,"Command allowed only with RS-232"`.
+`+514,"Command allowed only with RS-232"`. The driver keeps them off the GPIB path
+automatically.
 
 Connecting does not reset the supply. Disconnecting, and TestController's Output Off,
 disable the output but leave protection trips and the programmed state alone.
@@ -100,77 +108,39 @@ RS-232 connector, and the manual warns against using RS-232 when those are confi
 
 ## Using it over RS-232
 
-Verified against an E3633A: all 26 of the driver's read queries answer correctly over
-serial, with a clean error queue.
+The driver works over RS-232 as well as GPIB. Three things must be right, and all three
+fail the same way — the port opens, writes appear to succeed, and nothing ever replies:
 
-Three things are easy to get wrong, and all three fail in exactly the same way — the
-port opens, writes appear to succeed, and nothing ever replies:
+- **Switch the interface on the front panel** (`I/O Config` key). GPIB is the factory
+  default, only one interface is live at a time, and the choice is held in non-volatile
+  memory. Selecting RS-232 removes the supply from the GPIB bus until you switch back.
+- **Use a null-modem cable.** The supply is a DTE device and so is a PC, so it needs a
+  DTE-to-DTE crossover cable, DB-9 female on both ends. A straight-through cable is
+  silently inert.
+- **Do not enable hardware flow control.** The driver's `#baudrate 9600N82RD` asserts
+  DTR and RTS and leaves flow control off, which is the "no handshake" wiring the manual
+  prescribes. With hardware flow control the command goes out but the supply never
+  replies.
 
-- **The interface must be switched on the front panel** (`I/O Config` key). GPIB is the
-  factory default, only one interface is live at a time, and the choice is held in
-  non-volatile memory. Selecting RS-232 removes the supply from the GPIB bus until you
-  switch it back.
-- **The cable must be null-modem.** The supply is a DTE device and so is a PC, so it
-  needs a DTE-to-DTE crossover cable, DB-9 female on both ends. A straight-through
-  cable is silently inert.
-- **Stop bits are fixed at 2.** Baud is 300–9600 (9600 default); parity/data is none/8
-  (default), even/7 or odd/7. The driver's `SerialInit` sends the required `SYST:REM`
-  automatically, and only when the port is not GPIB.
-- **Do not enable hardware flow control.** The driver uses `#baudrate 9600N82D` — `D`
-  asserts DTR and leaves flow control off. On a null-modem cable our DTR drives the
-  supply's DSR, which is what the manual prescribes for running without the handshake
-  ("tie the DSR line to logic TRUE"). With hardware flow control the command goes out
-  correctly but the supply never replies. Measured: no flow control and a DTR/DSR
-  handshake both gave 500 clean queries; RTS/CTS timed out every time.
+Stop bits are fixed at 2. Baud is 300–9600 (9600 default); parity/data is none/8
+(default), even/7 or odd/7. `SerialInit` sends `SYST:REM` automatically, and only when
+the port is not GPIB.
 
 If you sweep baud rates hunting for the right setting, expect `+511,"RS-232 framing
-error"` in the queue afterwards and the front-panel **ERROR** annunciator lit. That is
-the wrong-baud bytes reaching the UART, not a fault — read the error queue empty to
-clear it.
+error"` in the queue afterwards and the front-panel **ERROR** annunciator lit — the
+wrong-baud bytes reaching the UART, not a fault. Read the error queue empty to clear it.
 
-### Speed
+RS-232 runs a little slower than GPIB (roughly +20 ms per exchange at 9600 baud) but
+sustains one-second five-channel logging comfortably.
 
-Measured at 9600 baud, and it is closer to GPIB than expected:
+---
 
-| | RS-232 | GPIB |
-| :--- | ---: | ---: |
-| `MEAS:VOLT?` | 144.0 ms | 119.8 ms |
-| `VOLT?` (setpoint) | 72.6 ms | 54.5 ms |
-| All five logged channels | 495 ms | 399 ms |
+## A rejected query reports its error one command late
 
-About **1.24× slower**, a roughly flat +20 ms per exchange. Over a 400-cycle soak the
-serial path sustained **1.96 readings/second** with all five channels, with 0 bad
-replies in 2000 queries and a p99 within 2 ms of the median.
-
-**Remote mode makes the supply 1.8× faster.** Servicing the front panel costs real
-time, and `SYST:REM` disables it:
-
-| | `MEAS:VOLT?` | Five channels |
-| :--- | ---: | ---: |
-| Local (front panel live) | 222.1 ms | 909.5 ms |
-| Remote (`SYST:REM`) | 146.0 ms | 502.7 ms |
-
-The driver sends `SYST:REM` on connect, so logging gets the fast path. It matters
-mainly when interpreting a measurement taken before the driver has initialised — TC's
-identification scan runs first, so `*IDN?` is answered in local mode. (It *is* answered:
-`SYST:REM` is not required in order to get a reply, despite the manual's warning about
-communicating outside remote mode.)
-
-Note that a *measurement* costs about twice what a setpoint readback does on either
-transport, because `MEAS:` triggers a fresh conversion. Cost scales with the number of
-queries, so logging fewer channels is the way to log faster.
-
-### No inter-command delays are needed
-
-Some drivers for this family put a fixed ~20 ms delay after every command. Measured on
-this one, that is unnecessary on both transports:
-
-- 300 write-then-read cycles on the setpoint at 0 ms settling: **zero** mismatched
-  readbacks, no queued errors. Same at 5/10/20/50 ms.
-- 40 `VOLT:RANG` changes read back at 0 ms settling: **zero** wrong values.
-- 120 randomised GPIB address switches with no settling: zero bad replies.
-
-So a readback taken immediately after a write reflects the write.
+A query the supply rejects leaves a pending unread response, and its
+`-420,"Query UNTERMINATED"` then surfaces on the **next** error read rather than its own.
+When reading `SYST:ERR?` by hand, a failure reported against a healthy command is usually
+a stale queue entry from the command before it.
 
 ---
 

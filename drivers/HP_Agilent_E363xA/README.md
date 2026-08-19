@@ -10,7 +10,7 @@ from the data sheet.
 | | |
 | --- | --- |
 | **Driver** | [`HP_Agilent_E363xA.txt`](HP_Agilent_E363xA.txt) |
-| **Revision** | 1.3 |
+| **Revision** | 1.4 |
 | **Interface** | GPIB, RS-232 |
 | **Instrument notes** | [`instrument-notes.md`](instrument-notes.md) |
 
@@ -92,8 +92,12 @@ consumes what it reads: popping the error queue removes the entry.
 
 ## Logged channels
 
-Five channels rather than the obvious two, because a test cannot usually be re-run to
-recover a value nobody thought to record:
+Logging scope is chosen from the **mode menu**:
+
+![Mode menu](screenshots/e363xa-modes.png)
+
+- **Log All** — five channels (default)
+- **Log V and I only** — Voltage and Current
 
 | Channel | Source | Why |
 | --- | --- | --- |
@@ -106,8 +110,11 @@ under load. `Regulation` catches the moment a load pulls the supply out of const
 voltage into constant current — usually the point of the test, and invisible from voltage
 and current alone when the limit sits where the load settles.
 
-It costs five GPIB round trips per reading. `#readingDelay 2` hides that; drop the delay
-for fast logging and it becomes the limit.
+**Log V and I only** trims the cycle to the two measured channels for when several
+instruments share one logging interval and the full five-channel cycle no longer fits.
+Because it is a mode, not a checkbox, TestController locks it while a log is running, so a
+log's columns cannot change partway through. See
+[`instrument-notes.md`](instrument-notes.md).
 
 ---
 

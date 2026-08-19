@@ -1,25 +1,69 @@
-; HP / Agilent / Keysight E363xA DC Power Supplies - TestController driver
+; ==============================================================================
+; TestController Driver Definition: HP / Agilent / Keysight E363xA DC Supplies
+; ==============================================================================
+; Covers the E3632A, E3633A and E3634A.  Revision 1.4 - 2026-08-19
 ;
-; Coverage   E3632A (15V/7A and 30V/4A), E3633A (8V/20A and 20V/10A) and
-;            E3634A (25V/7A and 50V/4A). Both output ranges, with the setpoint
-;            ceilings following the selected range. Overvoltage and overcurrent
-;            protection, triggered setpoints, stepped adjustment, three stored
-;            states and front-panel display control.
+; Command syntax verified against the Keysight E3633A/E3634A User's Guide
+; 9018-01164 (ed. 7), the E3632A User's Guide 9018-01309 and the E363xA data
+; sheet 5968-9726EN, and tested live against an E3633A (F/W 1.6-5.0-1.0) over
+; GPIB. The E3633A ceilings below were read back from the instrument rather than
+; taken from the data sheet: P8V 8.24 V / 20.6 A, P20V 20.60 V / 10.3 A, OVP and
+; OCP both 22. The E3632A and E3634A figures are manual-derived and still need
+; hardware confirmation.
 ;
-; Verified   Against an E3633A (firmware 1.6-5.0-1.0) over GPIB. Every command
-;            exercised, and every range ceiling read back from the instrument
-;            rather than from the data sheet. The E3632A and E3634A limits are
-;            manual-derived and not yet confirmed on hardware.
-;            See instrument-notes.md beside this file.
+; Notes on the E363xA command set:
+;   * There is no CV/CC mode command. The supply runs in constant voltage until
+;     the load reaches the current limit, then crosses into constant current by
+;     itself, so there is one voltage setpoint, one current limit, and a
+;     Regulation readout saying which side the hardware is on. An earlier
+;     revision offered CV and CC as modes whose controls wrote the same
+;     VOLT/CURR registers - do not reintroduce that.
+;   * Changing the range turns the output off first. That is deliberate: it
+;     avoids carrying a low-range, high-current setup into high-range voltage.
+;   * GPIB and RS-232 are both built in, but only one is enabled at a time from
+;     the front panel. SYST:REM and SYST:LOC are RS-232 only, so SCPIx wrappers
+;     keep them off GPIB and [LOC] returns the supply to local on disconnect.
+;   * Connecting does not reset the supply. Disconnecting and TestController's
+;     Output Off disable the output but leave protection trips and the
+;     programmed state alone.
+;   * OUTP:REL is omitted deliberately - it drives optional TTL relay signals on
+;     the RS-232 connector, and the manual warns against using RS-232 when those
+;     are configured.
 ;
-; Revision   1.3
-; Date       2026-08-18
-; Author     Cyclotron
-; License    MIT - see LICENSE
+; Notes on the layout:
+;   * The pages are real pages rather than selector targets, so TestController
+;     renders them as tabs. Mixing a top-level selector with pages it does not
+;     name makes those pages paint over the selector-driven content instead of
+;     sitting beside it; the shapes that render correctly are "selector only" or
+;     "plain pages only", and this driver is the second.
+;   * The range-dependent ceilings therefore come from advNumber expressions.
+;     Every page being real means Main.Output_Range exists as a variable the
+;     advNumber expressions can read; Output_Range lists the four advNumbers in
+;     its :update: tag so they re-evaluate on a range change.
+;   * An advNumber limit line is split into exactly three whitespace-separated
+;     tokens - unit, min, max - so the expression must contain no spaces at all.
+;     A list written "LOW 0" becomes a fourth token and the driver fails to load
+;     with "Line do not contain 3 parameters", taking the port scan down with an
+;     IndexOutOfBounds. inList's default delimiter is "[|,; ]+", so "LOW,0" is
+;     the same test without a space.
 ;
-; Latest version: https://github.com/Cyclotronic/TC-Drivers
-; TestController by HKJ: https://lygte-info.dk/project/TestControllerIntro%20UK.html
-; Discussion: https://www.eevblog.com/forum/index.php?topic=234726.0
+; Instrument quirks found during validation:
+;   * A rejected query leaves a pending unread response, so its -420 "Query
+;     UNTERMINATED" surfaces on the NEXT error read rather than its own. When
+;     probing this family, read SYST:ERR? after every single query or the blame
+;     lands one command late.
+;   * VOLT:STEP? and CURR:STEP? do NOT accept MIN, MAX or DEF as query
+;     arguments, even though VOLT:STEP DEF is a valid setting command. Only the
+;     bare query works, so the step floors below are literals.
+;   * VOLT? MAX / CURR? MAX do work, and follow the selected range.
+;
+; This driver claims the same three #idString values as the shipped
+; "AgilentHP E363xA.TXT". Only one can win the match - move the stock file out
+; of the Devices folder to use this one.
+;
+; Published at https://github.com/Cyclotronic/TC-Drivers - see PUBLISHING.md
+; before changing anything that goes out with it.
+; ==============================================================================
 
 #metadef
 #idString HEWLETT-PACKARD,E3632A,
@@ -93,8 +137,12 @@
 
 #driver SCPIx
 #port comfixedbaud GPIB
-#baudrate 9600N82D
+#baudrate 9600N82RD
 #eol \n
+
+
+
+
 #gpibReadEol eoi
 
 #interfaceType PS
@@ -121,13 +169,30 @@
 ;
 ; The cost is five GPIB round trips per reading instead of two. That is hidden by
 ; #readingDelay 2; drop that delay for fast logging and it becomes the limit.
-#askValues MEAS:VOLT?;MEAS:CURR?;VOLT?;CURR?;STAT:QUES:COND?
-#value Voltage V D4
-#value Current A D4
-#value VoltageSet V D4
-#value CurrentSet A D4
-#value Regulation - D0
+; Logging scope is a device mode, chosen from the mode menu rather than the
+; setup panel, so it cannot be changed while logging is running and a log's
+; columns stay fixed for its whole run. Two modes:
+;
+;   "Log All"          - Voltage, Current, VoltageSet, CurrentSet, Regulation
+;   "Log V and I only" - Voltage and Current
+;
+; The supply has no notion of a logging mode, so the active one is held in the
+; client-side variable logMode: each #cmdMode sets it, #askMode reads it back,
+; and processModeString maps that to the mode name that gates #askValues and the
+; #value columns. Voltage and Current carry both mode names; the three extras
+; carry only Log_All. Each query keeps its trailing [20], wrapped with it, so
+; the V-and-I mode drops three queries and their delays together and the two
+; that remain stay 20 ms apart, which the serial path needs.
+#askValues [mode:Log_All,Log_V_and_I_only]MEAS:VOLT?;[20];MEAS:CURR?;[20];[mode:Log_All]VOLT?;[20];CURR?;[20];STAT:QUES:COND?;[20];[mode:]
+#value Voltage V D4 Log_All,Log_V_and_I_only
+#value Current A D4 Log_All,Log_V_and_I_only
+#value VoltageSet V D4 Log_All
+#value CurrentSet A D4 Log_All
+#value Regulation - D0 Log_All
 #readingDelay 2
+#modeChangeDelay 0.5
+#askMode LogModeGet?
+#cmdModeLayout 1 2
 
 ; SYST:REM/SYST:LOC are valid only for RS-232 on this family.
 #scpiCmd SerialInit #pgm#
@@ -147,7 +212,28 @@ endif;
 ; Quote the user text required by DISP:TEXT while keeping the setup control simple.
 #scpiCmd SetDisplayText tx DISP:TEXT "(value)"
 
-#initCmd SerialInit;
+; Logging-mode plumbing. Each #cmdMode below runs one of these Set shims, which
+; store the mode's token in logMode without touching the bus; LogModeGet? hands
+; that token back to #askMode. The tokens are the modes' deviceModeNames (ALL,
+; VI), which getFunctionModeFromDeviceMode maps to the mode names.
+#scpiCmd SetModeAll none
+:setvar: logMode="ALL"
+
+#scpiCmd SetModeVI none
+:setvar: logMode="VI"
+
+#scpiCmd LogModeGet? none?
+:readmath: logMode
+
+; The two selectable logging modes. The command that backs each one only sets
+; the client variable - nothing is sent to the supply.
+#cmdMode Log_All ALL
+SetModeAll
+
+#cmdMode Log_V_and_I_only VI
+SetModeVI
+
+#initCmd SetModeAll;SerialInit;
 #finalCmd OUTP OFF;[*OPC];SerialExit;GpibExit
 #outputOff OUTP OFF
 
@@ -174,14 +260,15 @@ endif;
 ; :textwidth: only affects input fields - so the button sizes to its label.
 ; :nogrid: would additionally free it from the form's column grid; it is
 ; undocumented but used by 55 of the toggleButtons in the shipped drivers. Left
-; off so the button aligns with the controls below it, matching the Chroma.
+; off so the button aligns with the controls below it.
 ;
 ; The two labels differ by one character, so the button may shift very slightly as
 ; it toggles - the docs warn a toggleButton resizes with its label. Padding them to
 ; equal length only worked by adding a visible character, which was worse.
 
+
 #cmdSetup toggleButton Output Main
-:read: OUTP?
+:read: [20];OUTP?
 :write: OUTP (value)
 :updatedelayed: 0.2
 :updatealloff:
@@ -191,7 +278,7 @@ OUTPUT_OFF 0
 OUTPUT_ON 1
 
 #cmdSetup radio Output_Range Main
-:read: VOLT:RANG?
+:read: [20];VOLT:RANG?
 :readmath: replaceRX(replaceRX(trim(unQuote(value)),"P(8|15|25)V","LOW"),"P(20|30|50)V","HIGH")
 :write: OUTP OFF;[*OPC];VOLT:RANG (value);[*OPC]
 :string:
@@ -216,7 +303,7 @@ center Setpoints
 1 100 Sunken
 
 #cmdSetup advNumber Voltage Main
-:read: VOLT?
+:read: [20];VOLT?
 :write: VOLT
 :updatedelayed: 0.2
 :format: D4
@@ -225,7 +312,7 @@ center Setpoints
 V 0 inList(Main.Output_Range,"LOW,0")?LowVoltageMax:HighVoltageMax
 
 #cmdSetup advNumber Current_Limit Main
-:read: CURR?
+:read: [20];CURR?
 :write: CURR
 :updatedelayed: 0.2
 :format: D4
@@ -248,10 +335,15 @@ center Status
 1 100 Sunken
 
 #cmdSetup indicator Temperature Main
-:read: STAT:QUES:COND?
+:read: [20];STAT:QUES:COND?
 :tip: Overtemperature shutdown. Check ventilation and the fan if this lights.
 Normal (int(value)&16)==0 green
 Overtemperature (int(value)&16)!=0 red
+
+; Logging scope (All channels / V and I only) is chosen from the mode menu, not
+; here - see the #cmdMode entries near the top. Keeping it a mode is deliberate:
+; TestController locks the mode while logging runs, so a log's columns cannot
+; change underneath it mid-run.
 
 ; ------------------------------------------------------- triggered setpoints
 ; Stage a voltage/current pair and apply it on a trigger, for a timed or
@@ -302,7 +394,7 @@ center Front Panel
 1 100 Sunken
 
 #cmdSetup buttonsOn Display Main
-:read: DISP?
+:read: [20];DISP?
 :write: DISP
 :updatedelayed: 0.2
 :tip: Turn the front-panel display on or off. Returning the instrument to local control turns it back on.
@@ -310,7 +402,7 @@ Off 0
 On 1
 
 #cmdSetup text Display_Message Main
-:read: DISP:TEXT?
+:read: [20];DISP:TEXT?
 :readmath: unQuote(value)
 :write: SetDisplayText
 :tip: Show up to 12 characters on the front panel.
@@ -334,7 +426,7 @@ center Voltage
 1 100 Sunken
 
 #cmdSetup number Voltage_Step Fine_Adjust
-:read: VOLT:STEP?
+:read: [20];VOLT:STEP?
 :write: VOLT:STEP
 :format: D6
 :buttontext: Set
@@ -370,7 +462,7 @@ center Current
 1 100 Sunken
 
 #cmdSetup number Current_Step Fine_Adjust
-:read: CURR:STEP?
+:read: [20];CURR:STEP?
 :write: CURR:STEP
 :format: D6
 :buttontext: Set
@@ -405,7 +497,7 @@ center Overvoltage
 1 100 Sunken
 
 #cmdSetup number OVP_Limit Protection
-:read: VOLT:PROT?
+:read: [20];VOLT:PROT?
 :write: VOLT:PROT
 :updatedelayed: 0.2
 :update: OVP_Tripped
@@ -415,7 +507,7 @@ center Overvoltage
 V 1 OVPMax
 
 #cmdSetup buttonsOn OVP_Enable Protection
-:read: VOLT:PROT:STAT?
+:read: [20];VOLT:PROT:STAT?
 :write: VOLT:PROT:STAT
 :updatedelayed: 0.2
 :update: OVP_Tripped
@@ -424,7 +516,7 @@ Off 0
 On 1
 
 #cmdSetup indicator OVP_Tripped Protection
-:read: VOLT:PROT:TRIP?
+:read: [20];VOLT:PROT:TRIP?
 :tip: Lights when overvoltage protection has fired. The output stays off until the trip is cleared.
 Clear 0 green
 Tripped int(value)==1 red
@@ -450,7 +542,7 @@ center Overcurrent
 1 100 Sunken
 
 #cmdSetup number OCP_Limit Protection
-:read: CURR:PROT?
+:read: [20];CURR:PROT?
 :write: CURR:PROT
 :updatedelayed: 0.2
 :update: OCP_Tripped
@@ -460,7 +552,7 @@ center Overcurrent
 A 0 OCPMax
 
 #cmdSetup buttonsOn OCP_Enable Protection
-:read: CURR:PROT:STAT?
+:read: [20];CURR:PROT:STAT?
 :write: CURR:PROT:STAT
 :updatedelayed: 0.2
 :update: OCP_Tripped
@@ -469,7 +561,7 @@ Off 0
 On 1
 
 #cmdSetup indicator OCP_Tripped Protection
-:read: CURR:PROT:TRIP?
+:read: [20];CURR:PROT:TRIP?
 :tip: Lights when overcurrent protection has fired.
 Clear 0 green
 Tripped int(value)==1 red
@@ -492,7 +584,7 @@ center Source
 1 100 Sunken
 
 #cmdSetup radio Trigger_Source Trigger
-:read: TRIG:SOUR?
+:read: [20];TRIG:SOUR?
 :write: TRIG:SOUR
 :string:
 :updatedelayed: 0.2
@@ -501,7 +593,7 @@ Bus BUS
 Immediate IMM
 
 #cmdSetup number Trigger_Delay Trigger
-:read: TRIG:DEL?
+:read: [20];TRIG:DEL?
 :write: TRIG:DEL
 :format: D3
 :buttontext: Set
@@ -523,7 +615,7 @@ center Pending Setpoints
 1 100 Sunken
 
 #cmdSetup advNumber Pending_Voltage Trigger
-:read: VOLT:TRIG?
+:read: [20];VOLT:TRIG?
 :write: VOLT:TRIG
 :format: D4
 :buttontext: Set
@@ -531,7 +623,7 @@ center Pending Setpoints
 V 0 inList(Main.Output_Range,"LOW,0")?LowVoltageMax:HighVoltageMax
 
 #cmdSetup advNumber Pending_Current Trigger
-:read: CURR:TRIG?
+:read: [20];CURR:TRIG?
 :write: CURR:TRIG
 :format: D4
 :buttontext: Set
@@ -572,26 +664,26 @@ center Diagnostics
 1 100 Sunken
 
 #cmdSetup infoAsk Identity Utility
-:read: *IDN?
+:read: [20];*IDN?
 :buttontext: Read ID
 :tip: Manufacturer, model, serial field and firmware revisions.
 
 #cmdSetup infoAsk SCPI_Version Utility
-:read: SYST:VERS?
+:read: [20];SYST:VERS?
 :buttontext: Read Version
 :tip: The SCPI language version this instrument implements.
 
 #cmdSetup infoAsk Last_Error Utility
-:read: SYST:ERR?
+:read: [20];SYST:ERR?
 :buttontext: Pop Error
 :tip: Read and remove the oldest entry from the error queue. Note a rejected query on this family reports its error one command late.
 
 #cmdSetup infoAsk Status_Byte Utility
-:read: *STB?
+:read: [20];*STB?
 :buttontext: Read STB
 :tip: Read the Status Byte without clearing its Request Service bit.
 
 #cmdSetup infoAsk Questionable_Enable Utility
-:read: STAT:QUES:ENAB?
+:read: [20];STAT:QUES:ENAB?
 :buttontext: Read Mask
 :tip: Read the Questionable Status enable mask without clearing event bits.
