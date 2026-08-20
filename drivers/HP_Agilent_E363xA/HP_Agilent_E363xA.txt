@@ -92,12 +92,13 @@
 #replaceText HighCurrentMax 10.30
 #replaceText OVPMax 22
 #replaceText OCPMax 22
-; Step floors, read back from the hardware: VOLT:STEP? = 0.0003644277 and
+; Increment floors, read back from the hardware: VOLT:STEP? = 0.0003644277 and
 ; CURR:STEP? = 0.0003802001. They are rounded DOWN to the six decimals the
 ; :format: D6 on those fields displays. Rounding up instead puts the minimum
-; above the value the field shows for the instrument's own default step, and
-; both fields come up red the moment Smallest Step is pressed. The 0.00032 used
-; for current before this came from the data sheet, below what it resolves.
+; above the value the field shows for the instrument's own default increment,
+; and both fields come up red the moment Smallest Increment is pressed. The
+; 0.00032 used for current before this came from the data sheet, below what it
+; resolves.
 #replaceText VoltageStepMin 0.000364
 #replaceText CurrentStepMin 0.000380
 
@@ -246,6 +247,15 @@ SetModeVI
 #interface getOn OUTP?
 #interface readVoltage 0
 #interface readCurrent 1
+
+; Exposes the front-panel display to TestController's Steps and Remote Readout
+; popups: a step can write a short label to the supply's display. String
+; interfaces carry no (channel) token, so TC evaluates the command as a script
+; expression rather than doing a plain (value) substitution - hence the
+; concatenation that wraps the text in quotes for DISP:TEXT, exactly as the
+; stock display drivers do. The display holds up to 12 characters; longer or
+; unsupported text is rejected with a -150 String data error.
+#interface setReadoutString DISP:TEXT ("\""+value+"\"")
 
 ; ==============================================================================
 ; The whole dialog, in the order the supply gets used
@@ -425,7 +435,11 @@ center Voltage
 #cmdSetup separator - Fine_Adjust
 1 100 Sunken
 
-#cmdSetup number Voltage_Step Fine_Adjust
+; Named _Increment rather than _Step: this sets how far the Down/Up buttons move
+; per press, not a value to sweep. TestController's Steps popup lists every
+; adjustable field by name regardless of page, and "..._Step" reads exactly like
+; something meant for a Steps program - it is not.
+#cmdSetup number Voltage_Increment Fine_Adjust
 :read: [20];VOLT:STEP?
 :write: VOLT:STEP
 :format: D6
@@ -433,11 +447,11 @@ center Voltage
 :tip: Amount each Voltage Down/Up press moves the output voltage.
 V VoltageStepMin HighVoltageMax
 
-#cmdSetup button Smallest_Voltage_Step Fine_Adjust
+#cmdSetup button Smallest_Voltage_Increment Fine_Adjust
 :write: VOLT:STEP DEF
 :updatedelayed: 0.2
-:update: Voltage_Step
-:tip: Set the step to the instrument's finest voltage resolution.
+:update: Voltage_Increment
+:tip: Set the increment to the instrument's finest voltage resolution.
 
 #cmdSetup buttons Voltage_Adjust Fine_Adjust
 :write: VOLT
@@ -461,7 +475,7 @@ center Current
 #cmdSetup separator - Fine_Adjust
 1 100 Sunken
 
-#cmdSetup number Current_Step Fine_Adjust
+#cmdSetup number Current_Increment Fine_Adjust
 :read: [20];CURR:STEP?
 :write: CURR:STEP
 :format: D6
@@ -469,11 +483,11 @@ center Current
 :tip: Amount each Current Down/Up press moves the current limit.
 A CurrentStepMin HighCurrentMax
 
-#cmdSetup button Smallest_Current_Step Fine_Adjust
+#cmdSetup button Smallest_Current_Increment Fine_Adjust
 :write: CURR:STEP DEF
 :updatedelayed: 0.2
-:update: Current_Step
-:tip: Set the step to the instrument's finest current resolution.
+:update: Current_Increment
+:tip: Set the increment to the instrument's finest current resolution.
 
 #cmdSetup buttons Current_Adjust Fine_Adjust
 :write: CURR
