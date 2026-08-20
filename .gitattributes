@@ -1,0 +1,27 @@
+# Line-ending and encoding policy.
+#
+# This repository lives on a file share used from both Windows and macOS, and
+# is edited by more than one person and more than one agent. Without explicit
+# rules, `core.autocrlf` differs per machine and every checkout produces
+# whole-file diffs that bury the real change.
+#
+# Rule: LF in the repository, LF in the working tree, everywhere.
+#
+# This is the public mirror, so the cost of getting it wrong is higher than
+# noise: a whole-file reformat pushed to GitHub is visible forever, and it
+# hides the one-line driver change it was carrying.
+
+* text=auto eol=lf
+
+*.md    text eol=lf
+*.txt   text eol=lf
+
+# Driver definitions are authored, already stored with LF, and parsed happily
+# that way by TestController - `#eol` sets protocol framing on the wire, not
+# the line endings of the file. No `-text` exception, deliberately.
+
+# Binary assets - Setup dialog screenshots
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
