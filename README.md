@@ -24,6 +24,21 @@ page, and notes on instrument behaviour worth knowing before you use it.
 
 ---
 
+## Notebooks
+
+Notes on how TestController behaves, written while building these drivers — what a
+declaration actually does, and why a device does or does not turn up where you expect.
+Published in Markdown and PDF under [`notebooks/`](notebooks/).
+
+| Notebook | Subject |
+| --- | --- |
+| [`#interfaceType` and `#interface`](notebooks/interface-types-and-functions.md) | What declaring a device type does and does not do, and the type-plus-function requirement each feature applies before a device appears in its list |
+
+These are working notes, not documentation, and each one states the TestController
+version it describes. See [`notebooks/README.md`](notebooks/README.md).
+
+---
+
 ## Installing a driver
 
 Copy the `.txt` file into your TestController `Devices` folder and restart:

@@ -21,6 +21,7 @@
 # the line endings of the file. No `-text` exception, deliberately.
 
 # Binary assets - Setup dialog screenshots
+*.pdf   binary
 *.png   binary
 *.jpg   binary
 *.jpeg  binary

@@ -1,0 +1,59 @@
+# Check that every notebook's PDF was re-rendered when its Markdown changed.
+#
+# Both formats are committed together from the authoring machine. This workflow
+# does not build or commit anything - it only refuses a change that updates a
+# notebook's Markdown and leaves the PDF behind, which is the one failure mode
+# of publishing the two side by side.
+#
+# It compares recorded source hashes rather than the PDFs themselves: Chrome
+# stamps a creation date into every render, so two PDFs of identical content
+# never match byte for byte and comparing them would fail constantly.
+#
+# To update after editing a notebook:
+#     python3 notebooks/tools/render_pdf.py notebooks/<name>.md
+#     python3 notebooks/tools/record_sources.py
+# then commit the .md, the .pdf and pdf-sources.sha256 together.
+
+name: Check notebook PDFs are current
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'notebooks/**'
+  pull_request:
+    paths:
+      - 'notebooks/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Every notebook has a PDF
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          missing=0
+          for md in notebooks/*.md; do
+            [ "$(basename "$md")" = "README.md" ] && continue
+            if [ ! -f "${md%.md}.pdf" ]; then
+              echo "::error file=$md::no PDF alongside this notebook"
+              missing=1
+            fi
+          done
+          exit $missing
+
+      - name: Each PDF matches the Markdown it was rendered from
+        working-directory: notebooks
+        run: |
+          if ! sha256sum -c pdf-sources.sha256; then
+            echo "::error::A notebook changed without its PDF being re-rendered."
+            echo "Run notebooks/tools/render_pdf.py then notebooks/tools/record_sources.py."
+            exit 1
+          fi
