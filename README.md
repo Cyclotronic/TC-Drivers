@@ -8,7 +8,7 @@ Each driver here has been written against the instrument's programming manual an
 per-range limit read back from the hardware rather than copied from a datasheet.
 
 Discussion and support for TestController itself is on the EEVblog thread
-[Program that can log/control many multimeters and other devices](https://www.eevblog.com/forum/index.php?topic=234726.0).
+[Program that can log/control many multimeters and other devices](https://www.eevblog.com/forum/testgear/program-that-can-log-from-many-multimeters/).
 
 ---
 

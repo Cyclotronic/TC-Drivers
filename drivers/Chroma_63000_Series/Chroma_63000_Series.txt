@@ -17,7 +17,7 @@
 ;
 ; Latest version: https://github.com/Cyclotronic/TC-Drivers
 ; TestController by HKJ: https://lygte-info.dk/project/TestControllerIntro%20UK.html
-; Discussion: https://www.eevblog.com/forum/index.php?topic=234726.0
+; Discussion: https://www.eevblog.com/forum/testgear/program-that-can-log-from-many-multimeters/
 
 #metadef
 #idString Chroma,63003-150-40
