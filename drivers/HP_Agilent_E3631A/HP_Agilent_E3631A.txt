@@ -127,7 +127,7 @@ endif;
 :updatedelayed: 0.2
 :updatealloff:
 :color: gray green
-:tip: Switch this ON yourself before an Auto Adjust or Param Sweeper run - on a three-channel driver those tools skip the output silently, so a sweep writes setpoints into a dead output and looks like it worked. OUTP is global: one enable for all three outputs, no per-output control.
+:tip: Switch this ON yourself before an Auto Adjust or Param Sweeper run - on a three-channel driver those tools skip the output silently, so a sweep writes setpoints into a dead output and looks like it worked. OUTP is global.
 OUTPUT_OFF 0
 OUTPUT_ON 1
 
@@ -364,7 +364,7 @@ A 0 1.03
 :write: INIT;*TRG;*WAI
 :updatedelayed: 0.2
 :update: Voltage Current Voltage2 Current2 Voltage3 Current3
-:tip: Transfer the pending setpoints above to the live outputs. This arms and fires as one chained message because a channel re-select between the two disarms the trigger silently, and this driver issues one on every logging cycle - bench-confirmed lost at a 0.3 s logging interval, survived at 3 s. With Trigger Source set to Immediate the transfer happens on the arm and the trailing *TRG has nothing left to fire; check SYST:ERR? on the Diagnostics page if you use that combination.
+:tip: Transfer the pending setpoints above to the live outputs. Arm and fire are one message - a channel re-select between them disarms the trigger silently. On Immediate the transfer happens at the arm; check the Diagnostics error queue.
 
 #cmdSetup separator - Memory
 1 100 Sunken
@@ -380,7 +380,7 @@ Location_3 3
 :write: *RCL #;[*OPC]
 :updatedelayed: 0.3
 :update: Voltage Current Voltage2 Current2 Voltage3 Current3 Output Track Trigger_Source Trigger_Delay
-:tip: Recall a stored instrument state. TRIG:DEL is NOT restored - it comes back 0.00 whatever was saved, contrary to the manual. Bench-confirmed 2026-08-23, isolated with TRIG:SOUR held constant. Every other target in the update list above does restore correctly.
+:tip: Recall a stored instrument state. TRIG:DEL is NOT restored - it comes back 0.00 whatever was saved, contrary to the manual. Re-enter the delay by hand after every recall. Every other target in the update list above does restore correctly.
 Location_1 1
 Location_2 2
 Location_3 3
