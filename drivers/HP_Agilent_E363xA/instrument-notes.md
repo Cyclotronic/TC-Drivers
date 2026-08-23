@@ -206,3 +206,44 @@ The whole `DISPlay` subsystem is `DISP` (on/off), `DISP:STAT`, `DISP:TEXT` and
 It isn't needed: that key exists because the front panel has one display and must swap
 between showing measured output and programmed limits. TestController shows both at
 once — the measurements as logged channels, the limits as the setpoint fields.
+
+---
+
+## Two TestController rules this driver had to learn the hard way
+
+Neither of these is instrument behaviour — both are TestController's, and both are
+recorded here because each one cost a debugging session.
+
+**A selector must name every page the file defines.** The five settings pages are named
+by the `Settings View` selector, and a page the selector does not name paints *over* the
+selector-driven content instead of sitting beside it. The two shapes that render
+correctly are "selector only" and "plain pages only"; there is no working mixture. The
+controls that stay visible above the selector — Output, the range, the two setpoints and
+the temperature indicator — belong to no page at all, which is a different thing from
+belonging to an unnamed one.
+
+**An `advNumber` limit line is exactly three whitespace-separated tokens** — unit, min,
+max — so an expression in any of those positions must contain no spaces. A range test
+written `inList(Output_Range,"LOW 0")` becomes a fourth token, and the driver then fails
+to load with `Line do not contain 3 parameters`, taking the port scan down with it in an
+`IndexOutOfBounds`. `inList`'s default delimiter is `[|,; ]+`, so `"LOW,0"` is the same
+test without the space.
+
+---
+
+## Revision history
+
+**1.8** — the five settings pages moved from tabs to the `Settings View` selector, so
+control names lost their page qualifier and `Current_Limit` became `Current`. `#name` and
+`#handle` are unchanged, so saved setups are unaffected. `Regulation` became
+`DIGITAL(CC,CV)` instead of the raw register. The OVP and OCP indicators could never
+light `Clear`: the clear condition was a bare `0`, which is false as a script expression,
+so both fell through to the unlit fallback and a cleared trip showed as nothing at all —
+now `int(value)==0`, with trip detection itself never having been affected.
+`#interfaceType` gained `Readout`, because the Remote Readout popup filters on interface
+type and a `PS`-only device could never appear in its list even with `setReadoutString`
+implemented. Voltage and current step fields were renamed to `*_Increment`. Clear Display
+Message now writes `DISP:TEXT ""` ahead of `DISP:TEXT:CLE`, so the field's re-read comes
+back empty instead of restoring the cleared text.
+
+**1.5 and earlier** — the five pages were plain tabs.

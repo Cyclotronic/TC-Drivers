@@ -1,122 +1,32 @@
-; ==============================================================================
-; TestController Driver Definition: HP / Agilent / Keysight E3631A DC Supply
-; ==============================================================================
-; Triple-output supply: +6 V, +25 V and -25 V.  Revision 1.2 - 2026-08-23
+; HP / Agilent / Keysight E3631A DC Power Supply - TestController driver
 ;
-; Command syntax verified against the Keysight E3631A User's Guide 9018-01308,
-; and tested live against an E3631A (F/W 2.1-5.0-1.0) over GPIB. The setpoint
-; ceilings below were computed from the data sheet as nominal x 1.03; "VOLT? MAX"
-; / "CURR? MAX" were then read from the instrument and every one came back exact,
-; so they are not provisional. The absence of minimum step floors is also correct
-; rather than an omission: "VOLT:STEP?" / "CURR:STEP?" answer -113 on this model,
-; so there is nothing for the advNumber fields to carry.
+; Coverage   E3631A triple output: +6 V, +25 V and -25 V
+;            Per-channel voltage and current setpoints, the global output
+;            enable, tracking mode, trigger coupling, bus and immediate
+;            triggering with a delay, stored states, front-panel display text,
+;            and a regulation readout per output logged as CC or CV.
 ;
-; Three defects were found on the bench. Each is silent - no error is queued for
-; any of them - and each is instrument or TestController behaviour this file
-; cannot repair:
-;   * An INST write between INIT and *TRG disarms an armed trigger. This one IS
-;     worked around, in the only way a driver can: Arm and Trigger Now are merged
-;     into a single chained message so nothing can interleave between them. See
-;     the Apply Pending Values block on the Trigger page for the measurements.
-;   * *RCL does not restore TRIG:DEL. Warned about in the Recall State tip.
-;   * TestController's automated output control skips the output on a
-;     multi-channel driver. Warned about in the Output tip.
+; Verified   Against an E3631A (firmware 2.1-5.0-1.0) over GPIB. Every setpoint
+;            ceiling was read back from the instrument with VOLT? MAX and
+;            CURR? MAX and matched the data sheet exactly. Three defects were
+;            found on the bench, all of them silent - nothing reaches the error
+;            queue for any of them: TestController's automated tools do not
+;            switch the output on for a multi-channel driver, *RCL does not
+;            restore TRIG:DEL, and a channel re-select landing between INIT and
+;            *TRG disarms an armed trigger. The last is worked around by
+;            chaining arm and fire into one message; the other two are warned
+;            about in the tips beside the controls that hit them. All three are
+;            written up in instrument-notes.md beside this file.
 ;
-; Notes on the E3631A command set:
-;   * Three fixed outputs, no switchable ranges - so unlike the E363xA there is
-;     no #replaceText block and the ceilings are inline literals.
-;   * Measurements can name their channel directly (MEAS:VOLT? P6V), but reading
-;     a SETPOINT (VOLT? / CURR?) requires selecting the channel first. The INST
-;     commands are therefore inlined into #askValues rather than left to the
-;     caller. INST:NSEL takes the channel as a number (1 = P6V, 2 = P25V,
-;     3 = N25V), which is what lets the (channel) token map straight through in
-;     the #interface block.
-;   * Those inlined INST commands are load-bearing for a second, undocumented
-;     reason: within a single value read, query replies are cached against the
-;     literal query text. This sequence asks bare "VOLT?" and "CURR?" three
-;     times, once per channel, so on the query text alone the 2nd and 3rd would
-;     be served the +6 V answer. What prevents that is that each write flushes
-;     that cache, so every "INST P<n>" clears it before its own channel's
-;     queries refill it. Consequence: do NOT reorder this sequence to group the
-;     queries together, and do not hoist the INST commands out of it. Either
-;     change makes all three channels silently report the +6 V setpoint.
-;   * Value indices are safe for a related reason: only a sub-command containing
-;     "?" appends to the reply, so the INST writes and the [20] delays consume no
-;     value slot. That is what makes "readVoltage 0 2 4" / "readCurrent 1 3 5"
-;     line up with the 15 #value lines.
-;   * OUTP is global. It switches all three outputs together and there is no
-;     per-output enable, which is why #interface setOn carries no channel token
-;     while every other line in that block does.
-;   * Declaring three channels costs the automated tools their output control, and
-;     the failure is SILENT. TestController does not switch the output on for a
-;     driver that declares more than one channel, so Auto Adjust and the Param
-;     Sweeper never enable it. Bench-confirmed 2026-08-23: a 5-step voltage sweep
-;     ran to completion with OUTP? = 0 at every sample, setpoints visibly moving,
-;     and the error queue clean throughout - nothing anywhere said the output was
-;     off. Three channels is still the right declaration (the panels and the Steps
-;     popup reach all three outputs, one channel would surrender that), so the
-;     cost is accepted and carried in the Output tip instead. That tip is the only
-;     warning the operator gets; do not trim it.
-;   * There is no programmable OVP or OCP on this model. Nothing is missing from
-;     the protection side; the instrument simply has none.
-;   * Trigger Delay is a D3 field with a declared minimum of 0, which TestController
-;     renders as "-0.000 - 3600.000". A display formatting quirk, not an error
-;     here - the stored -0.0 prints with its sign. D4 fields with a 0 minimum are
-;     unaffected. Left alone rather than papered over with 0.001.
-;   * Track mode and trigger coupling are mutually exclusive. OUTP:TRAC must be
-;     OFF before INST:COUP can couple the +/-25 V outputs, or the supply raises
-;     error 800. Both controls are exposed here, on different pages, so each tip
-;     says so.
-;   * DISP:TEXT shows at most 12 characters and silently truncates the rest; only
-;     a string over 40 characters raises an error (-223). Confirmed on the
-;     E3633A, same family: 13 characters truncate to 12 and queue NO error. The
-;     Display_Message field's trailing "12" does NOT cap input - it is a display
-;     width, and TestController accepts a longer string happily. So both that
-;     field and setReadoutString can overrun, and the overrun is silent.
-;   * Both display paths break on a value containing a double quote. SetDisplayText
-;     is DISP:TEXT "(value)" and setReadoutString concatenates its own quotes, so
-;     AB"CD becomes DISP:TEXT "AB"CD" - three quotes - and the supply answers
-;     -103,"Invalid separator" and keeps the previous text. Confirmed on the
-;     E3633A, which carries the identical setReadoutString line. It fails safely
-;     but silently: TestController surfaces nothing and the field snaps back.
+; Revision   1.2
+; Date       2026-08-23
+; Author     Cyclotron
+; License    MIT - see LICENSE
 ;
-; Notes on the status registers - this model does NOT share the E363xA's map:
-;   * STAT:QUES:COND? bit 4 (16) is a FAN fault on the E3631A. On the E363xA the
-;     same bit is overtemperature. Do not carry one map across to the other.
-;   * Regulation comes from STAT:QUES:INST:ISUM<n>:COND?, a separate per-output
-;     register, not from STAT:QUES:COND?. Bit 0 true = constant current, bit 1
-;     true = constant voltage, both true = neither quantity is regulated, and
-;     neither bit = that output is off. That bit ORDER is the same as the
-;     E363xA's, which is why DIGITAL(CC,CV) transfers here unchanged.
-;   * The condition registers are read directly and no enable registers are set
-;     up. STAT:QUES:INST:ISUM<n>:ENAB exists to propagate these bits up to bit 13
-;     of the questionable register, which this driver never reads. If a COND?
-;     query returns 0 for an output that is plainly in CV, the enables are needed
-;     after all and this assumption is wrong.
-;   * DIGITAL appends only those bits that are both named and set, so an output
-;     that is off renders BLANK rather than "0". The saved log file records the
-;     raw integer regardless - bench-settled: an E3633A log wrote Regulation as a
-;     bare 2 in CV, so the register value reaches the file and the fault bits
-;     survive into a log even while the screen shows nothing.
-;   * DIGITAL is preferred over D0 because a digital value draws on the shared
-;     digital scale instead of consuming a chart curve, and that is now confirmed
-;     on this model - the sharper test of the two. Each DIGITAL value splits into
-;     one chart channel per named bit, so three values become SIX channels -
-;     Regulation CC/CV, Regulation2 CC/CV, Regulation3 CC/CV - and all six draw on
-;     a single right-hand axis labelled "Digital". Only one numeric axis is
-;     consumed, by Voltage on the left. So DIGITAL costs ZERO numeric curves on a
-;     three-value model; it saves more here than on a single-value driver, not
-;     less. Positive control for anyone re-running this: the column must go BLANK
-;     when a register reads 0. A literal "0" in the column means DIGITAL is not
-;     live and the file loaded is not this one.
-;
-; Author: Cyclotron.  License: MIT - see LICENSE.
-;
-; Published at https://github.com/Cyclotronic/TC-Drivers
+; Latest version: https://github.com/Cyclotronic/TC-Drivers
 ; TestController by HKJ: https://lygte-info.dk/project/TestControllerIntro%20UK.html
 ; Discussion: https://www.eevblog.com/forum/testgear/program-that-can-log-from-many-multimeters/
-; ==============================================================================
-;
+
 #idString HEWLETT-PACKARD,E3631A,
 #name HP E3631A
 #handle HPE3631A

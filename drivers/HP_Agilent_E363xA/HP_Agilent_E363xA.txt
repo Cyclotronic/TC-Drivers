@@ -1,109 +1,33 @@
-; ==============================================================================
-; TestController Driver Definition: HP / Agilent / Keysight E363xA DC Supplies
-; ==============================================================================
-; Covers the E3632A, E3633A and E3634A.  Revision 1.8 - 2026-08-23
+; HP / Agilent / Keysight E363xA DC Power Supplies - TestController driver
 ;
-; Command syntax verified against the Keysight E3633A/E3634A User's Guide
-; 9018-01164 (ed. 7), the E3632A User's Guide 9018-01309 and the E363xA data
-; sheet 5968-9726EN, and tested live against an E3633A (F/W 1.6-5.0-1.0) over
-; GPIB. The E3633A ceilings below were read back from the instrument rather than
-; taken from the data sheet: P8V 8.24 V / 20.6 A, P20V 20.60 V / 10.3 A, OVP and
-; OCP both 22. The E3632A and E3634A figures are manual-derived and still need
-; hardware confirmation.
+; Coverage   E3632A, E3633A and E3634A
+;            Both output ranges, voltage and current setpoints with a fine
+;            adjust page, OVP and OCP with trip indicators, bus and immediate
+;            triggering, front-panel display text, stored states, and a
+;            regulation readout logged as CC or CV. Five settings pages sit
+;            behind a Settings View selector; the output, the range and the two
+;            setpoints stay visible above it.
 ;
-; Every page was exercised page by page against a live E3633A, the selector
-; included, and both trip indicators were seen lighting Clear. Still unseen: the
-; OCP indicator's own red-to-green transition, which needs a load to provoke.
+; Verified   Against an E3633A (firmware 1.6-5.0-1.0) over GPIB, page by page.
+;            Its ceilings were read back from the instrument rather than taken
+;            from the data sheet: P8V 8.24 V / 20.6 A, P20V 20.60 V / 10.3 A,
+;            OVP and OCP both 22. The E3632A and E3634A figures are
+;            manual-derived and still need hardware confirmation, and the OCP
+;            indicator's own red-to-green transition needs a load to provoke
+;            and has not been seen. See instrument-notes.md beside this file.
 ;
-; Changes since revision 1.5:
-;   * The five settings pages moved from tabs to a Settings View selector.
-;     Control names lost their page qualifier as a consequence, and
-;     Current_Limit became Current. #name and #handle are unchanged, so saved
-;     setups are unaffected.
-;   * Regulation is logged as DIGITAL(CC,CV) rather than the raw register, so the
-;     column names the mode and draws on the shared digital scale instead of
-;     consuming a numeric curve. Verified on an E3633A: register 0 leaves the
-;     column blank, register 2 reads CV, and the saved file keeps the raw integer.
-;   * The OVP and OCP indicators could never light "Clear". The clear condition
-;     was a bare 0, which is false as a script expression, so both fell through
-;     to the unlit fallback and a cleared trip showed as nothing at all. It is
-;     now int(value)==0. Trip detection itself was never affected.
-;   * #interfaceType declares Readout alongside PS. setReadoutString was already
-;     implemented, but the Remote Readout popup filters on the interface type, so
-;     a PS-only device could never appear in its device list.
-;   * Voltage and current step fields renamed to *_Increment.
-;   * Clear Display Message writes DISP:TEXT "" ahead of DISP:TEXT:CLE, so the
-;     field's re-read comes back empty instead of restoring the cleared text.
-;
-; Notes on the E363xA command set:
-;   * There is no CV/CC mode command. The supply runs in constant voltage until
-;     the load reaches the current limit, then crosses into constant current by
-;     itself, so there is one voltage setpoint, one current limit, and a
-;     Regulation readout saying which side the hardware is on. An earlier
-;     revision offered CV and CC as modes whose controls wrote the same
-;     VOLT/CURR registers - do not reintroduce that.
-;   * Changing the range turns the output off first. That is deliberate: it
-;     avoids carrying a low-range, high-current setup into high-range voltage.
-;   * GPIB and RS-232 are both built in, but only one is enabled at a time from
-;     the front panel. SYST:REM and SYST:LOC are RS-232 only, so SCPIx wrappers
-;     keep them off GPIB and [LOC] returns the supply to local on disconnect.
-;   * Connecting does not reset the supply. Disconnecting and TestController's
-;     Output Off disable the output but leave protection trips and the
-;     programmed state alone.
-;   * OUTP:REL is omitted deliberately - it drives optional TTL relay signals on
-;     the RS-232 connector, and the manual warns against using RS-232 when those
-;     are configured.
-;
-; Notes on the layout:
-;   * The five settings pages - Basic Setup, Fine Adjust, Protection, Trigger
-;     and Utility - are named by a selector driven by the Settings View
-;     combobox, so exactly one of them is on screen at a time. Output, the
-;     output range, the two setpoints and the temperature indicator belong to no
-;     page at all and stay visible above the selector, because those are the
-;     controls in use while the supply is running.
-;   * The selector names every page this file defines, and that is the whole
-;     trick. A page the selector does not name paints over the selector-driven
-;     content instead of sitting beside it; the two shapes that render correctly
-;     are "selector only" and "plain pages only", and this driver is the first.
-;   * Which page is showing is client-side state. setView, getView? and InitView
-;     only write and read the viewState variable, so changing page sends nothing
-;     to the supply, and InitView opens the dialog on Basic Setup.
-;   * The range-dependent ceilings come from advNumber expressions. Output_Range
-;     sits outside the pages, so every advNumber can read it as a variable;
-;     Output_Range lists the four advNumbers in its :update: tag so they
-;     re-evaluate on a range change.
-;   * An advNumber limit line is split into exactly three whitespace-separated
-;     tokens - unit, min, max - so the expression must contain no spaces at all.
-;     A list written "LOW 0" becomes a fourth token and the driver fails to load
-;     with "Line do not contain 3 parameters", taking the port scan down with an
-;     IndexOutOfBounds. inList's default delimiter is "[|,; ]+", so "LOW,0" is
-;     the same test without a space.
-;
-; Instrument quirks found during validation:
-;   * A rejected query leaves a pending unread response, so its -420 "Query
-;     UNTERMINATED" surfaces on the NEXT error read rather than its own. When
-;     probing this family, read SYST:ERR? after every single query or the blame
-;     lands one command late.
-;   * VOLT:STEP? and CURR:STEP? do NOT accept MIN, MAX or DEF as query
-;     arguments, even though VOLT:STEP DEF is a valid setting command. Only the
-;     bare query works, so the step floors below are literals.
-;   * VOLT? MAX / CURR? MAX do work, and follow the selected range.
-;   * DISP:TEXT:CLE returns the panel to its normal readout but leaves the text
-;     buffer holding the string it just stopped showing, so DISP:TEXT? keeps
-;     answering with the cleared text. Writing DISP:TEXT "" first empties the
-;     buffer for real. Confirmed on an E3633A; the E3632A and E3634A are
-;     untested.
+; Revision   1.8
+; Date       2026-08-23
+; Author     Cyclotron
+; License    MIT - see LICENSE
 ;
 ; This driver claims the same three #idString values as the shipped
 ; "AgilentHP E363xA.TXT". Only one can win the match - move the stock file out
 ; of the Devices folder to use this one.
 ;
-; Cyclotron, MIT licensed - see LICENSE.
-;
 ; Latest version: https://github.com/Cyclotronic/TC-Drivers
 ; TestController by HKJ: https://lygte-info.dk/project/TestControllerIntro%20UK.html
 ; Discussion: https://www.eevblog.com/forum/testgear/program-that-can-log-from-many-multimeters/
-; ==============================================================================
 
 #metadef
 #idString HEWLETT-PACKARD,E3632A,
