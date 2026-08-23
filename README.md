@@ -17,7 +17,8 @@ Discussion and support for TestController itself is on the EEVblog thread
 | Driver | Instruments | Interface | Rev |
 | --- | --- | --- | --- |
 | [Chroma 63000 Series](drivers/Chroma_63000_Series/) | Chroma 63003-150-40, 63004-150-60 DC electronic load | GPIB / LXI / serial | 1.4 |
-| [HP / Agilent E363xA](drivers/HP_Agilent_E363xA/) | HP E3632A, E3633A, E3634A DC power supply | GPIB / RS-232 | 1.5 |
+| [HP / Agilent E3631A](drivers/HP_Agilent_E3631A/) | HP E3631A triple-output DC power supply, +6 V / +25 V / -25 V | GPIB / RS-232 | 1.2 |
+| [HP / Agilent E363xA](drivers/HP_Agilent_E363xA/) | HP E3632A, E3633A, E3634A DC power supply | GPIB / RS-232 | 1.8 |
 
 Each driver has its own folder containing the driver file, screenshots of every mode
 page, and notes on instrument behaviour worth knowing before you use it.

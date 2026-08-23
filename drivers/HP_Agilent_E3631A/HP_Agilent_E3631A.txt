@@ -1,0 +1,530 @@
+; ==============================================================================
+; TestController Driver Definition: HP / Agilent / Keysight E3631A DC Supply
+; ==============================================================================
+; Triple-output supply: +6 V, +25 V and -25 V.  Revision 1.2 - 2026-08-23
+;
+; Command syntax verified against the Keysight E3631A User's Guide 9018-01308,
+; and tested live against an E3631A (F/W 2.1-5.0-1.0) over GPIB. The setpoint
+; ceilings below were computed from the data sheet as nominal x 1.03; "VOLT? MAX"
+; / "CURR? MAX" were then read from the instrument and every one came back exact,
+; so they are not provisional. The absence of minimum step floors is also correct
+; rather than an omission: "VOLT:STEP?" / "CURR:STEP?" answer -113 on this model,
+; so there is nothing for the advNumber fields to carry.
+;
+; Three defects were found on the bench. Each is silent - no error is queued for
+; any of them - and each is instrument or TestController behaviour this file
+; cannot repair:
+;   * An INST write between INIT and *TRG disarms an armed trigger. This one IS
+;     worked around, in the only way a driver can: Arm and Trigger Now are merged
+;     into a single chained message so nothing can interleave between them. See
+;     the Apply Pending Values block on the Trigger page for the measurements.
+;   * *RCL does not restore TRIG:DEL. Warned about in the Recall State tip.
+;   * TestController's automated output control skips the output on a
+;     multi-channel driver. Warned about in the Output tip.
+;
+; Notes on the E3631A command set:
+;   * Three fixed outputs, no switchable ranges - so unlike the E363xA there is
+;     no #replaceText block and the ceilings are inline literals.
+;   * Measurements can name their channel directly (MEAS:VOLT? P6V), but reading
+;     a SETPOINT (VOLT? / CURR?) requires selecting the channel first. The INST
+;     commands are therefore inlined into #askValues rather than left to the
+;     caller. INST:NSEL takes the channel as a number (1 = P6V, 2 = P25V,
+;     3 = N25V), which is what lets the (channel) token map straight through in
+;     the #interface block.
+;   * Those inlined INST commands are load-bearing for a second, undocumented
+;     reason: within a single value read, query replies are cached against the
+;     literal query text. This sequence asks bare "VOLT?" and "CURR?" three
+;     times, once per channel, so on the query text alone the 2nd and 3rd would
+;     be served the +6 V answer. What prevents that is that each write flushes
+;     that cache, so every "INST P<n>" clears it before its own channel's
+;     queries refill it. Consequence: do NOT reorder this sequence to group the
+;     queries together, and do not hoist the INST commands out of it. Either
+;     change makes all three channels silently report the +6 V setpoint.
+;   * Value indices are safe for a related reason: only a sub-command containing
+;     "?" appends to the reply, so the INST writes and the [20] delays consume no
+;     value slot. That is what makes "readVoltage 0 2 4" / "readCurrent 1 3 5"
+;     line up with the 15 #value lines.
+;   * OUTP is global. It switches all three outputs together and there is no
+;     per-output enable, which is why #interface setOn carries no channel token
+;     while every other line in that block does.
+;   * Declaring three channels costs the automated tools their output control, and
+;     the failure is SILENT. TestController does not switch the output on for a
+;     driver that declares more than one channel, so Auto Adjust and the Param
+;     Sweeper never enable it. Bench-confirmed 2026-08-23: a 5-step voltage sweep
+;     ran to completion with OUTP? = 0 at every sample, setpoints visibly moving,
+;     and the error queue clean throughout - nothing anywhere said the output was
+;     off. Three channels is still the right declaration (the panels and the Steps
+;     popup reach all three outputs, one channel would surrender that), so the
+;     cost is accepted and carried in the Output tip instead. That tip is the only
+;     warning the operator gets; do not trim it.
+;   * There is no programmable OVP or OCP on this model. Nothing is missing from
+;     the protection side; the instrument simply has none.
+;   * Trigger Delay is a D3 field with a declared minimum of 0, which TestController
+;     renders as "-0.000 - 3600.000". A display formatting quirk, not an error
+;     here - the stored -0.0 prints with its sign. D4 fields with a 0 minimum are
+;     unaffected. Left alone rather than papered over with 0.001.
+;   * Track mode and trigger coupling are mutually exclusive. OUTP:TRAC must be
+;     OFF before INST:COUP can couple the +/-25 V outputs, or the supply raises
+;     error 800. Both controls are exposed here, on different pages, so each tip
+;     says so.
+;   * DISP:TEXT shows at most 12 characters and silently truncates the rest; only
+;     a string over 40 characters raises an error (-223). Confirmed on the
+;     E3633A, same family: 13 characters truncate to 12 and queue NO error. The
+;     Display_Message field's trailing "12" does NOT cap input - it is a display
+;     width, and TestController accepts a longer string happily. So both that
+;     field and setReadoutString can overrun, and the overrun is silent.
+;   * Both display paths break on a value containing a double quote. SetDisplayText
+;     is DISP:TEXT "(value)" and setReadoutString concatenates its own quotes, so
+;     AB"CD becomes DISP:TEXT "AB"CD" - three quotes - and the supply answers
+;     -103,"Invalid separator" and keeps the previous text. Confirmed on the
+;     E3633A, which carries the identical setReadoutString line. It fails safely
+;     but silently: TestController surfaces nothing and the field snaps back.
+;
+; Notes on the status registers - this model does NOT share the E363xA's map:
+;   * STAT:QUES:COND? bit 4 (16) is a FAN fault on the E3631A. On the E363xA the
+;     same bit is overtemperature. Do not carry one map across to the other.
+;   * Regulation comes from STAT:QUES:INST:ISUM<n>:COND?, a separate per-output
+;     register, not from STAT:QUES:COND?. Bit 0 true = constant current, bit 1
+;     true = constant voltage, both true = neither quantity is regulated, and
+;     neither bit = that output is off. That bit ORDER is the same as the
+;     E363xA's, which is why DIGITAL(CC,CV) transfers here unchanged.
+;   * The condition registers are read directly and no enable registers are set
+;     up. STAT:QUES:INST:ISUM<n>:ENAB exists to propagate these bits up to bit 13
+;     of the questionable register, which this driver never reads. If a COND?
+;     query returns 0 for an output that is plainly in CV, the enables are needed
+;     after all and this assumption is wrong.
+;   * DIGITAL appends only those bits that are both named and set, so an output
+;     that is off renders BLANK rather than "0". The saved log file records the
+;     raw integer regardless - bench-settled: an E3633A log wrote Regulation as a
+;     bare 2 in CV, so the register value reaches the file and the fault bits
+;     survive into a log even while the screen shows nothing.
+;   * DIGITAL is preferred over D0 because a digital value draws on the shared
+;     digital scale instead of consuming a chart curve, and that is now confirmed
+;     on this model - the sharper test of the two. Each DIGITAL value splits into
+;     one chart channel per named bit, so three values become SIX channels -
+;     Regulation CC/CV, Regulation2 CC/CV, Regulation3 CC/CV - and all six draw on
+;     a single right-hand axis labelled "Digital". Only one numeric axis is
+;     consumed, by Voltage on the left. So DIGITAL costs ZERO numeric curves on a
+;     three-value model; it saves more here than on a single-value driver, not
+;     less. Positive control for anyone re-running this: the column must go BLANK
+;     when a register reads 0. A literal "0" in the column means DIGITAL is not
+;     live and the file loaded is not this one.
+;
+; Author: Cyclotron.  License: MIT - see LICENSE.
+;
+; Published at https://github.com/Cyclotronic/TC-Drivers
+; TestController by HKJ: https://lygte-info.dk/project/TestControllerIntro%20UK.html
+; Discussion: https://www.eevblog.com/forum/testgear/program-that-can-log-from-many-multimeters/
+; ==============================================================================
+;
+#idString HEWLETT-PACKARD,E3631A,
+#name HP E3631A
+#handle HPE3631A
+
+#author Cyclotron
+#notes Triple-output DC supply: +6 V, +25 V and -25 V. Selector for Trigger, Memory, Display and Diagnostics panels. OUTP is global and switches all three outputs together; there is no OVP or OCP on this model. Command set and setpoint ceilings are bench-verified against firmware 2.1-5.0-1.0. Three silent defects are documented in the Output, Apply Pending Values and Recall State tips - read them before automating this supply.
+
+#driver SCPIx
+#port comfixedbaud GPIB
+#baudrate 9600N82RD
+#eol \n
+
+#gpibReadEol eoi
+#interfaceType PS PS:2 PS:3
+
+; The E3631A allows direct measurement of channels without selection (MEAS:VOLT? P6V).
+; However, reading the setpoints (VOLT? and CURR?) requires selecting the channel first (INST P6V).
+; We insert the INST commands directly into the askValues sequence to select the channel before querying.
+#askValues [mode:Log_All,Log_V_and_I_only]MEAS:VOLT? P6V;[20];MEAS:CURR? P6V;[20];MEAS:VOLT? P25V;[20];MEAS:CURR? P25V;[20];MEAS:VOLT? N25V;[20];MEAS:CURR? N25V;[20];[mode:Log_All]INST P6V;[20];VOLT?;[20];CURR?;[20];INST P25V;[20];VOLT?;[20];CURR?;[20];INST N25V;[20];VOLT?;[20];CURR?;[20];STAT:QUES:INST:ISUM1:COND?;[20];STAT:QUES:INST:ISUM2:COND?;[20];STAT:QUES:INST:ISUM3:COND?;[20];[mode:]
+#value Voltage V D4 Log_All,Log_V_and_I_only
+#value Current A D4 Log_All,Log_V_and_I_only
+#value Voltage2 V D4 Log_All,Log_V_and_I_only
+#value Current2 A D4 Log_All,Log_V_and_I_only
+#value Voltage3 V D4 Log_All,Log_V_and_I_only
+#value Current3 A D4 Log_All,Log_V_and_I_only
+#value VoltageSet V D4 Log_All
+#value CurrentSet A D4 Log_All
+#value Voltage2Set V D4 Log_All
+#value Current2Set A D4 Log_All
+#value Voltage3Set V D4 Log_All
+#value Current3Set A D4 Log_All
+#value Regulation - DIGITAL(CC,CV) Log_All
+#value Regulation2 - DIGITAL(CC,CV) Log_All
+#value Regulation3 - DIGITAL(CC,CV) Log_All
+
+#readingDelay 2
+#modeChangeDelay 0.5
+#askMode LogModeGet?
+#cmdModeLayout 1 2
+
+#scpiCmd setView none
+:setvar: viewState=inputValue
+
+#scpiCmd getView? none?
+:readmath: viewState
+
+#scpiCmd InitView none
+:setvar: viewState="Memory"
+
+#scpiCmd SerialInit #pgm#
+if (portType!="GPIB")
+  deviceWrite(handle,"SYST:REM");
+endif;
+
+#scpiCmd SerialExit #pgm#
+if (portType!="GPIB")
+  deviceWrite(handle,"SYST:LOC");
+endif;
+
+#scpiCmd GpibExit
+[LOC]
+
+#scpiCmd SetDisplayText tx DISP:TEXT "(value)"
+
+#scpiCmd SetModeAll none
+:setvar: logMode="ALL"
+
+#scpiCmd SetModeVI none
+:setvar: logMode="VI"
+
+#scpiCmd LogModeGet? none?
+:readmath: logMode
+
+
+#initCmd SetModeAll;SerialInit;InitView;
+#finalCmd OUTP OFF;[*OPC];SerialExit;GpibExit
+#outputOff OUTP OFF
+
+; Multi-channel PS interface. INST:NSEL selects the channel by number
+; (1 = P6V, 2 = P25V, 3 = N25V) so the (channel) token maps directly.
+; OUTP is global on the E3631A — it controls all three outputs at once.
+#interface setVoltage INST:NSEL (channel);VOLT (value)
+#interface setCurrent INST:NSEL (channel);CURR (value)
+#interface setOn OUTP (value)
+#interface getVoltage INST:NSEL (channel);VOLT?
+#interface getCurrent INST:NSEL (channel);CURR?
+#interface getOn OUTP?
+#interface readVoltage 0 2 4
+#interface readCurrent 1 3 5
+#interface setReadoutString DISP:TEXT ("\""+value+"\"")
+
+#cmdMode Log_All ALL SetModeAll
+#cmdMode Log_V_and_I_only VI SetModeVI
+
+#cmdSetup toggleButton Output
+:read: [20];OUTP?
+:write: OUTP (value)
+:updatedelayed: 0.2
+:updatealloff:
+:color: gray green
+:tip: Switch this ON yourself before an Auto Adjust or Param Sweeper run - on a three-channel driver those tools skip the output silently, so a sweep writes setpoints into a dead output and looks like it worked. OUTP is global: one enable for all three outputs, no per-output control.
+OUTPUT_OFF 0
+OUTPUT_ON 1
+
+#cmdSetup toggleButton Track
+:read: [20];OUTP:TRAC?
+:write: OUTP:TRAC (value)
+:updatedelayed: 0.2
+:color: gray green
+:tip: Track the -25V output to the +25V one. Turn this OFF before setting Trigger Coupling to All, or the supply rejects the coupling with error 800.
+TRACK_OFF 0
+TRACK_ON 1
+
+#cmdSetup separator -
+:labelformat: bold (80,80,80)
+1 100 Empty
+center +6V Output
+
+#cmdSetup separator -
+1 100 Sunken
+
+#cmdSetup advNumber Voltage
+:read: [20];INST P6V;[20];VOLT?
+:write: INST P6V;[*OPC];VOLT
+:updatedelayed: 0.2
+:format: D4
+:buttontext: Set
+:tip: Output voltage for +6V supply.
+V 0 6.18
+
+#cmdSetup advNumber Current
+:read: [20];INST P6V;[20];CURR?
+:write: INST P6V;[*OPC];CURR
+:updatedelayed: 0.2
+:format: D4
+:buttontext: Set
+:tip: Current limit for +6V supply.
+A 0 5.15
+
+#cmdSetup separator -
+:labelformat: bold (80,80,80)
+1 100 Empty
+center +25V Output
+
+#cmdSetup separator -
+1 100 Sunken
+
+#cmdSetup advNumber Voltage2
+:read: [20];INST P25V;[20];VOLT?
+:write: INST P25V;[*OPC];VOLT
+:updatedelayed: 0.2
+:format: D4
+:buttontext: Set
+:tip: Output voltage for +25V supply.
+V 0 25.75
+
+#cmdSetup advNumber Current2
+:read: [20];INST P25V;[20];CURR?
+:write: INST P25V;[*OPC];CURR
+:updatedelayed: 0.2
+:format: D4
+:buttontext: Set
+:tip: Current limit for +25V supply.
+A 0 1.03
+
+#cmdSetup separator -
+:labelformat: bold (80,80,80)
+1 100 Empty
+center -25V Output
+
+#cmdSetup separator -
+1 100 Sunken
+
+#cmdSetup advNumber Voltage3
+:read: [20];INST N25V;[20];VOLT?
+:write: INST N25V;[*OPC];VOLT
+:updatedelayed: 0.2
+:format: D4
+:buttontext: Set
+:tip: Output voltage for -25V supply.
+V -25.75 0
+
+#cmdSetup advNumber Current3
+:read: [20];INST N25V;[20];CURR?
+:write: INST N25V;[*OPC];CURR
+:updatedelayed: 0.2
+:format: D4
+:buttontext: Set
+:tip: Current limit for -25V supply.
+A 0 1.03
+
+#cmdSetup separator -
+6 100 Empty
+
+#cmdSetup indicator Fan_Fault
+:read: [20];STAT:QUES:COND?
+:tip: Fan fault: bit 4 of STAT:QUES:COND?. On the E3631A that bit is the fan, not the overtemperature bit it is on the E363xA.
+Normal (int(value)&16)==0 green
+Fault (int(value)&16)!=0 red
+
+#cmdSetup separator -
+1 100 Sunken
+
+#cmdSetup separator -
+:labelformat: bold (80,80,80)
+1 100 Empty
+center Settings View
+
+#cmdSetup separator -
+1 100 Sunken
+
+#cmdSetup comboboxHot Settings_View
+:read: getView?
+:write: setView
+:string:
+:tip: Select which settings panel to display
+Trigger Trigger
+Memory Memory
+Display Display
+Diagnostics Diagnostics
+
+#cmdSetup selector Settings_View_Selector
+Settings_View
+Trigger Trigger.
+Memory Memory.
+Display Display.
+Diagnostics Diagnostics.
+
+#cmdSetup separator - Trigger
+1 100 Sunken
+
+#cmdSetup combobox Trigger_Source Trigger
+:read: [20];TRIG:SOUR?
+:write: TRIG:SOUR #
+:string:
+:updatedelayed: 0.2
+:tip: Select the trigger source.
+Bus BUS
+Immediate IMM
+
+#cmdSetup advNumber Trigger_Delay Trigger
+:read: [20];TRIG:DEL?
+:write: TRIG:DEL
+:format: D3
+:buttontext: Set
+:tip: Time delay between the trigger and the output change (seconds).
+sec 0 3600
+
+#cmdSetup combobox Trigger_Coupling Trigger
+:read: [20];INST:COUP?
+:write: INST:COUP #
+:string:
+:updatedelayed: 0.2
+:tip: Couple the outputs so one trigger updates them together. Requires Track to be OFF first; with tracking on the supply answers error 800.
+None NONE
+All ALL
+
+#cmdSetup separator - Trigger
+1 100 Sunken
+
+#cmdSetup advNumber Pending_Voltage_6V Trigger
+:read: [20];INST P6V;[20];VOLT:TRIG?
+:write: INST P6V;[*OPC];VOLT:TRIG
+:updatedelayed: 0.2
+:format: D4
+:buttontext: Set
+:tip: Pending trigger voltage for +6V supply.
+V 0 6.18
+
+#cmdSetup advNumber Pending_Current_6V Trigger
+:read: [20];INST P6V;[20];CURR:TRIG?
+:write: INST P6V;[*OPC];CURR:TRIG
+:updatedelayed: 0.2
+:format: D4
+:buttontext: Set
+:tip: Pending trigger current limit for +6V supply.
+A 0 5.15
+
+#cmdSetup advNumber Pending_Voltage_P25V Trigger
+:read: [20];INST P25V;[20];VOLT:TRIG?
+:write: INST P25V;[*OPC];VOLT:TRIG
+:updatedelayed: 0.2
+:format: D4
+:buttontext: Set
+:tip: Pending trigger voltage for +25V supply.
+V 0 25.75
+
+#cmdSetup advNumber Pending_Current_P25V Trigger
+:read: [20];INST P25V;[20];CURR:TRIG?
+:write: INST P25V;[*OPC];CURR:TRIG
+:updatedelayed: 0.2
+:format: D4
+:buttontext: Set
+:tip: Pending trigger current limit for +25V supply.
+A 0 1.03
+
+#cmdSetup advNumber Pending_Voltage_N25V Trigger
+:read: [20];INST N25V;[20];VOLT:TRIG?
+:write: INST N25V;[*OPC];VOLT:TRIG
+:updatedelayed: 0.2
+:format: D4
+:buttontext: Set
+:tip: Pending trigger voltage for -25V supply.
+V -25.75 0
+
+#cmdSetup advNumber Pending_Current_N25V Trigger
+:read: [20];INST N25V;[20];CURR:TRIG?
+:write: INST N25V;[*OPC];CURR:TRIG
+:updatedelayed: 0.2
+:format: D4
+:buttontext: Set
+:tip: Pending trigger current limit for -25V supply.
+A 0 1.03
+
+#cmdSetup separator - Trigger
+1 100 Sunken
+
+#cmdSetup separator - Trigger
+6 100 Empty
+
+; Arm and fire are ONE control here, deliberately. An INST write landing between
+; INIT and *TRG disarms the armed trigger and SYST:ERR? stays clean afterwards,
+; so nothing surfaces to the operator. This driver issues INST on every logging
+; cycle and on every read of this page, which makes that window a real one and
+; not a theoretical one. It is cadence-dependent: at a 3 s TestController logging
+; interval the armed trigger survived 9 of 9 attempts, and at 0.3 s it was lost
+; 2 of 2, with the logging-stopped control leg firing normally both times.
+; Bench-confirmed 2026-08-23.
+;
+; Chaining INIT and *TRG into a single message closes the window - the driver
+; cannot interleave inside one write. The cost is that arm-now-fire-later is no
+; longer offered from this page, which is the point of a bus trigger; to do that,
+; stop logging first and drive INIT and *TRG from a script.
+#cmdSetup button Apply_Pending_Values Trigger
+:write: INIT;*TRG;*WAI
+:updatedelayed: 0.2
+:update: Voltage Current Voltage2 Current2 Voltage3 Current3
+:tip: Transfer the pending setpoints above to the live outputs. This arms and fires as one chained message because a channel re-select between the two disarms the trigger silently, and this driver issues one on every logging cycle - bench-confirmed lost at a 0.3 s logging interval, survived at 3 s. With Trigger Source set to Immediate the transfer happens on the arm and the trailing *TRG has nothing left to fire; check SYST:ERR? on the Diagnostics page if you use that combination.
+
+#cmdSetup separator - Memory
+1 100 Sunken
+
+#cmdSetup buttons Save_State Memory
+:write: *SAV #;[*OPC]
+:tip: Store the instrument state in non-volatile memory.
+Location_1 1
+Location_2 2
+Location_3 3
+
+#cmdSetup buttons Recall_State Memory
+:write: *RCL #;[*OPC]
+:updatedelayed: 0.3
+:update: Voltage Current Voltage2 Current2 Voltage3 Current3 Output Track Trigger_Source Trigger_Delay
+:tip: Recall a stored instrument state. TRIG:DEL is NOT restored - it comes back 0.00 whatever was saved, contrary to the manual. Bench-confirmed 2026-08-23, isolated with TRIG:SOUR held constant. Every other target in the update list above does restore correctly.
+Location_1 1
+Location_2 2
+Location_3 3
+
+#cmdSetup separator - Display
+1 100 Sunken
+
+#cmdSetup buttonsOn Display Display
+:read: [20];DISP?
+:write: DISP
+:tip: Turn the front-panel display on or off.
+Off 0
+On 1
+
+#cmdSetup text Display_Message Display
+:read: [20];DISP:TEXT?
+:write: SetDisplayText
+:readmath: unQuote(value)
+:tip: Display a string on the front panel. Only the first 12 characters are shown and the rest are dropped without an error.
+12
+
+#cmdSetup button Clear_Display_Message Display
+:write: DISP:TEXT:CLE
+:updatedelayed: 0.2
+:update: Display_Message
+:tip: Remove the message and return to normal readout.
+
+#cmdSetup separator - Diagnostics
+1 100 Sunken
+
+#cmdSetup button Beep Diagnostics
+:write: SYST:BEEP
+:tip: Issue a single beep from the instrument.
+
+#cmdSetup infoAsk Self_Test Diagnostics
+:read: [20];*TST?
+:layout:
+:tip: Perform a complete self-test. 0 = Pass, 1 = Fail. Measured at ~1.24 s against this driver's 2000 ms read timeout - it fits as written, but the ~760 ms margin narrows on a busy gateway.
+Result
+
+#cmdSetup infoAsk Error_Queue Diagnostics
+:read: [20];SYST:ERR?
+:layout:
+:tip: Read and clear one error from the queue.
+Error
+
+#cmdSetup infoAsk SCPI_Version Diagnostics
+:read: [20];SYST:VERS?
+:layout:
+:tip: Query the SCPI version.
+Version
+
+#cmdSetup infoAsk Instrument_ID Diagnostics
+:read: [20];*IDN?
+:layout:
+:tip: Query the instrument identification string.
+ID

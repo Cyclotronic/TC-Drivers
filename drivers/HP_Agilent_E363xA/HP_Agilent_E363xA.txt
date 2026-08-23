@@ -1,7 +1,7 @@
 ; ==============================================================================
 ; TestController Driver Definition: HP / Agilent / Keysight E363xA DC Supplies
 ; ==============================================================================
-; Covers the E3632A, E3633A and E3634A.  Revision 1.5 - 2026-08-23
+; Covers the E3632A, E3633A and E3634A.  Revision 1.8 - 2026-08-23
 ;
 ; Command syntax verified against the Keysight E3633A/E3634A User's Guide
 ; 9018-01164 (ed. 7), the E3632A User's Guide 9018-01309 and the E363xA data
@@ -10,6 +10,30 @@
 ; taken from the data sheet: P8V 8.24 V / 20.6 A, P20V 20.60 V / 10.3 A, OVP and
 ; OCP both 22. The E3632A and E3634A figures are manual-derived and still need
 ; hardware confirmation.
+;
+; Every page was exercised page by page against a live E3633A, the selector
+; included, and both trip indicators were seen lighting Clear. Still unseen: the
+; OCP indicator's own red-to-green transition, which needs a load to provoke.
+;
+; Changes since revision 1.5:
+;   * The five settings pages moved from tabs to a Settings View selector.
+;     Control names lost their page qualifier as a consequence, and
+;     Current_Limit became Current. #name and #handle are unchanged, so saved
+;     setups are unaffected.
+;   * Regulation is logged as DIGITAL(CC,CV) rather than the raw register, so the
+;     column names the mode and draws on the shared digital scale instead of
+;     consuming a numeric curve. Verified on an E3633A: register 0 leaves the
+;     column blank, register 2 reads CV, and the saved file keeps the raw integer.
+;   * The OVP and OCP indicators could never light "Clear". The clear condition
+;     was a bare 0, which is false as a script expression, so both fell through
+;     to the unlit fallback and a cleared trip showed as nothing at all. It is
+;     now int(value)==0. Trip detection itself was never affected.
+;   * #interfaceType declares Readout alongside PS. setReadoutString was already
+;     implemented, but the Remote Readout popup filters on the interface type, so
+;     a PS-only device could never appear in its device list.
+;   * Voltage and current step fields renamed to *_Increment.
+;   * Clear Display Message writes DISP:TEXT "" ahead of DISP:TEXT:CLE, so the
+;     field's re-read comes back empty instead of restoring the cleared text.
 ;
 ; Notes on the E363xA command set:
 ;   * There is no CV/CC mode command. The supply runs in constant voltage until
@@ -31,15 +55,23 @@
 ;     are configured.
 ;
 ; Notes on the layout:
-;   * The pages are real pages rather than selector targets, so TestController
-;     renders them as tabs. Mixing a top-level selector with pages it does not
-;     name makes those pages paint over the selector-driven content instead of
-;     sitting beside it; the shapes that render correctly are "selector only" or
-;     "plain pages only", and this driver is the second.
-;   * The range-dependent ceilings therefore come from advNumber expressions.
-;     Every page being real means Main.Output_Range exists as a variable the
-;     advNumber expressions can read; Output_Range lists the four advNumbers in
-;     its :update: tag so they re-evaluate on a range change.
+;   * The five settings pages - Basic Setup, Fine Adjust, Protection, Trigger
+;     and Utility - are named by a selector driven by the Settings View
+;     combobox, so exactly one of them is on screen at a time. Output, the
+;     output range, the two setpoints and the temperature indicator belong to no
+;     page at all and stay visible above the selector, because those are the
+;     controls in use while the supply is running.
+;   * The selector names every page this file defines, and that is the whole
+;     trick. A page the selector does not name paints over the selector-driven
+;     content instead of sitting beside it; the two shapes that render correctly
+;     are "selector only" and "plain pages only", and this driver is the first.
+;   * Which page is showing is client-side state. setView, getView? and InitView
+;     only write and read the viewState variable, so changing page sends nothing
+;     to the supply, and InitView opens the dialog on Basic Setup.
+;   * The range-dependent ceilings come from advNumber expressions. Output_Range
+;     sits outside the pages, so every advNumber can read it as a variable;
+;     Output_Range lists the four advNumbers in its :update: tag so they
+;     re-evaluate on a range change.
 ;   * An advNumber limit line is split into exactly three whitespace-separated
 ;     tokens - unit, min, max - so the expression must contain no spaces at all.
 ;     A list written "LOW 0" becomes a fourth token and the driver fails to load
@@ -56,13 +88,21 @@
 ;     arguments, even though VOLT:STEP DEF is a valid setting command. Only the
 ;     bare query works, so the step floors below are literals.
 ;   * VOLT? MAX / CURR? MAX do work, and follow the selected range.
+;   * DISP:TEXT:CLE returns the panel to its normal readout but leaves the text
+;     buffer holding the string it just stopped showing, so DISP:TEXT? keeps
+;     answering with the cleared text. Writing DISP:TEXT "" first empties the
+;     buffer for real. Confirmed on an E3633A; the E3632A and E3634A are
+;     untested.
 ;
 ; This driver claims the same three #idString values as the shipped
 ; "AgilentHP E363xA.TXT". Only one can win the match - move the stock file out
 ; of the Devices folder to use this one.
 ;
-; Published at https://github.com/Cyclotronic/TC-Drivers - see PUBLISHING.md
-; before changing anything that goes out with it.
+; Cyclotron, MIT licensed - see LICENSE.
+;
+; Latest version: https://github.com/Cyclotronic/TC-Drivers
+; TestController by HKJ: https://lygte-info.dk/project/TestControllerIntro%20UK.html
+; Discussion: https://www.eevblog.com/forum/testgear/program-that-can-log-from-many-multimeters/
 ; ==============================================================================
 
 #metadef
@@ -134,7 +174,7 @@
 #replaceText CurrentStepMin 0.00012
 
 #author Cyclotron
-#notes Dual-range E3632A, E3633A and E3634A DC supply. Tabs for Main, Fine Adjust, Protection, Trigger and Utility; the setpoint ceilings follow the selected output range. E3633A command set and range limits are live-verified; E3632A and E3634A limits are manual-derived.
+#notes Dual-range E3632A, E3633A and E3634A DC supply. Selector for Basic_Setup, Fine Adjust, Protection, Trigger and Utility; the setpoint ceilings follow the selected output range. E3633A command set and range limits are live-verified; E3632A and E3634A limits are manual-derived.
 
 #driver SCPIx
 #port comfixedbaud GPIB
@@ -146,7 +186,7 @@
 
 #gpibReadEol eoi
 
-#interfaceType PS
+#interfaceType PS Readout
 
 ; The supply returns one response per query. TestController sends semicolon-separated
 ; #askValues entries as independent commands, matching the live GPIB validation.
@@ -162,10 +202,26 @@
 ; from the demand under load, which neither one alone reveals. Regulation catches
 ; the moment a load pulls the supply out of constant voltage into constant
 ; current - usually the point of the test, and invisible from voltage and current
-; alone when the limit happens to sit where the load settles. It is logged as the
-; raw register value so it charts as steps:
-;     0 = output off or unregulated   1 = constant current
-;     2 = constant voltage            3 = regulation fault
+; alone when the limit happens to sit where the load settles. It is logged as a
+; DIGITAL value, so the column names the mode instead of printing a number and
+; the chart draws it on the shared digital scale rather than as a curve:
+;     bit 0 (1) = CC   constant current
+;     bit 1 (2) = CV   constant voltage
+; Neither bit set means the output is off or unregulated, and the column is then
+; blank rather than showing 0. Both bits set has no documented meaning; it would
+; show as "CC CV". Note the manual labels bit 0 "Voltage" and bit 1 "Current",
+; naming the quantity that is no longer regulated rather than the mode - bit 0 is
+; set when the supply is in constant current. The names here are the mode, which
+; is what the column is for; do not "correct" them to match the manual's labels.
+;
+; The same Questionable Status register also carries overtemperature (bit 4),
+; OVP tripped (bit 9) and OCP tripped (bit 10). DIGITAL cannot name those: there
+; is no working way to skip a bit, so only a run of bits from 0 can be labelled.
+; Nothing is lost. Those three already have their own indicators in the Main and
+; Protection setup panels, reading VOLT:PROT:TRIP? and CURR:PROT:TRIP? directly,
+; and a saved log keeps the raw integer whatever the display format is - so the
+; file still carries every bit even when the on-screen column is blank.
+;
 ; The bits are not latched, so this is the live state at each reading.
 ;
 ; The cost is five GPIB round trips per reading instead of two. That is hidden by
@@ -189,13 +245,23 @@
 #value Current A D4 Log_All,Log_V_and_I_only
 #value VoltageSet V D4 Log_All
 #value CurrentSet A D4 Log_All
-#value Regulation - D0 Log_All
+#value Regulation - DIGITAL(CC,CV) Log_All
 #readingDelay 2
 #modeChangeDelay 0.5
 #askMode LogModeGet?
 #cmdModeLayout 1 2
 
 ; SYST:REM/SYST:LOC are valid only for RS-232 on this family.
+
+#scpiCmd setView none
+:setvar: viewState=inputValue
+
+#scpiCmd getView? none?
+:readmath: viewState
+
+#scpiCmd InitView none
+:setvar: viewState="Basic_Setup"
+
 #scpiCmd SerialInit #pgm#
 if (portType!="GPIB")
   deviceWrite(handle,"SYST:REM");
@@ -234,7 +300,7 @@ SetModeAll
 #cmdMode Log_V_and_I_only VI
 SetModeVI
 
-#initCmd SetModeAll;SerialInit;
+#initCmd SetModeAll;SerialInit;InitView;
 #finalCmd OUTP OFF;[*OPC];SerialExit;GpibExit
 #outputOff OUTP OFF
 
@@ -281,7 +347,7 @@ SetModeVI
 ; equal length only worked by adding a visible character, which was worse.
 
 
-#cmdSetup toggleButton Output Main
+#cmdSetup toggleButton Output
 :read: [20];OUTP?
 :write: OUTP (value)
 :updatedelayed: 0.2
@@ -291,68 +357,103 @@ SetModeVI
 OUTPUT_OFF 0
 OUTPUT_ON 1
 
-#cmdSetup radio Output_Range Main
+#cmdSetup radio Output_Range
 :read: [20];VOLT:RANG?
 :readmath: replaceRX(replaceRX(trim(unQuote(value)),"P(8|15|25)V","LOW"),"P(20|30|50)V","HIGH")
 :write: OUTP OFF;[*OPC];VOLT:RANG (value);[*OPC]
 :string:
 :updatedelayed: 0.3
-:update: Output Voltage Current_Limit Pending_Voltage Pending_Current
+:update: Output Voltage Current Pending_Voltage Pending_Current
 :tip: Selects the output range. The Voltage and Current Limit ceilings follow this setting. Changing range always switches the output off first.
 LowRangeName LOW
 HighRangeName HIGH
 
-#cmdSetup separator - Main
-6 100 Empty
-
-#cmdSetup separator - Main
+#cmdSetup separator -
 1 100 Sunken
 
-#cmdSetup separator - Main
+#cmdSetup separator -
 :labelformat: bold (80,80,80)
 1 100 Empty
 center Setpoints
 
-#cmdSetup separator - Main
+#cmdSetup separator -
 1 100 Sunken
 
-#cmdSetup advNumber Voltage Main
+#cmdSetup advNumber Voltage
 :read: [20];VOLT?
 :write: VOLT
 :updatedelayed: 0.2
 :format: D4
 :buttontext: Set
 :tip: Output voltage. The supply holds this until the load reaches the current limit.
-V 0 inList(Main.Output_Range,"LOW,0")?LowVoltageMax:HighVoltageMax
+V 0 inList(Output_Range,"LOW,0")?LowVoltageMax:HighVoltageMax
 
-#cmdSetup advNumber Current_Limit Main
+#cmdSetup advNumber Current
 :read: [20];CURR?
 :write: CURR
 :updatedelayed: 0.2
 :format: D4
 :buttontext: Set
 :tip: Current limit. Reaching it moves the supply into constant current, and the output voltage then falls to whatever sustains this current.
-A 0 inList(Main.Output_Range,"LOW,0")?LowCurrentMax:HighCurrentMax
+A 0 inList(Output_Range,"LOW,0")?LowCurrentMax:HighCurrentMax
 
-#cmdSetup separator - Main
-6 100 Empty
-
-#cmdSetup separator - Main
+#cmdSetup separator -
 1 100 Sunken
 
-#cmdSetup separator - Main
+#cmdSetup separator -
 :labelformat: bold (80,80,80)
 1 100 Empty
 center Status
 
-#cmdSetup separator - Main
+#cmdSetup separator -
 1 100 Sunken
 
-#cmdSetup indicator Temperature Main
+#cmdSetup indicator Temperature
 :read: [20];STAT:QUES:COND?
 :tip: Overtemperature shutdown. Check ventilation and the fan if this lights.
 Normal (int(value)&16)==0 green
 Overtemperature (int(value)&16)!=0 red
+
+
+#cmdSetup separator -
+1 100 Sunken
+
+#cmdSetup separator -
+:labelformat: bold (80,80,80)
+1 100 Empty
+center Settings View
+
+#cmdSetup comboboxHot Settings_View
+:read: getView?
+:write: setView
+:string:
+:tip: Select which settings panel to display
+Basic_Setup BasicSetup
+Fine_Adjust FineAdjust
+Protection Protection
+Trigger Trigger
+Utility Utility
+
+#cmdSetup selector Settings_View_Selector
+Settings_View
+BasicSetup BasicSetup.
+FineAdjust FineAdjust.
+Protection Protection.
+Trigger Trigger.
+Utility Utility.
+
+#cmdSetup separator -
+1 100 Sunken
+#cmdSetup separator - BasicSetup
+1 100 Sunken
+
+#cmdSetup separator - BasicSetup
+6 100 Empty
+
+#cmdSetup separator - BasicSetup
+1 100 Sunken
+
+
 
 ; Logging scope (All channels / V and I only) is chosen from the mode menu, not
 ; here - see the #cmdMode entries near the top. Keeping it a mode is deliberate:
@@ -363,51 +464,45 @@ Overtemperature (int(value)&16)!=0 red
 ; Stage a voltage/current pair and apply it on a trigger, for a timed or
 ; synchronised step rather than an immediate change.
 
-#cmdSetup separator - Main
-6 100 Empty
-
-#cmdSetup separator - Main
-1 100 Sunken
-
-#cmdSetup separator - Main
+#cmdSetup separator - BasicSetup
 :labelformat: bold (80,80,80)
 1 100 Empty
 center Memory
 
-#cmdSetup separator - Main
+#cmdSetup separator - BasicSetup
 1 100 Sunken
 
-#cmdSetup buttons Save_State Main
+#cmdSetup buttons Save_State BasicSetup
 :write: *SAV #;[*OPC]
 :tip: Store voltage, current, range, output state, protection, trigger, display and step settings in nonvolatile memory.
 Slot_1 1
 Slot_2 2
 Slot_3 3
 
-#cmdSetup buttons Recall_State Main
+#cmdSetup buttons Recall_State BasicSetup
 :write: *RCL #;[*OPC]
 :updatedelayed: 0.3
-:update: Output Voltage Current_Limit Pending_Voltage Pending_Current
+:update: Output Voltage Current Pending_Voltage Pending_Current
 :tip: Recall a stored state. Careful - a stored state can include Output ON, so the supply may start sourcing as soon as it is recalled.
 Slot_1 1
 Slot_2 2
 Slot_3 3
 
-#cmdSetup separator - Main
+#cmdSetup separator - BasicSetup
 6 100 Empty
 
-#cmdSetup separator - Main
+#cmdSetup separator - BasicSetup
 1 100 Sunken
 
-#cmdSetup separator - Main
+#cmdSetup separator - BasicSetup
 :labelformat: bold (80,80,80)
 1 100 Empty
 center Front Panel
 
-#cmdSetup separator - Main
+#cmdSetup separator - BasicSetup
 1 100 Sunken
 
-#cmdSetup buttonsOn Display Main
+#cmdSetup buttonsOn Display BasicSetup
 :read: [20];DISP?
 :write: DISP
 :updatedelayed: 0.2
@@ -415,35 +510,40 @@ center Front Panel
 Off 0
 On 1
 
-#cmdSetup text Display_Message Main
+#cmdSetup text Display_Message BasicSetup
 :read: [20];DISP:TEXT?
 :readmath: unQuote(value)
 :write: SetDisplayText
 :tip: Show up to 12 characters on the front panel.
 12
 
-#cmdSetup button Clear_Display_Message Main
-:write: DISP:TEXT:CLE
+; DISP:TEXT:CLE returns the panel to its normal readout but leaves the text
+; buffer holding the old string, so the :update: below used to re-read the
+; message straight back into the field. Writing an empty string first empties
+; the buffer - accepted with no error on an E3633A, and DISP:TEXT? then reads
+; back a genuinely empty "".
+#cmdSetup button Clear_Display_Message BasicSetup
+:write: DISP:TEXT "";DISP:TEXT:CLE
 :updatedelayed: 0.2
 :update: Display_Message
-:tip: Remove the message and return the display to the normal readout.
+:tip: Remove the message and return the display to the normal readout. If the field repopulates instead of going blank, the supply refused the empty-string write and is still reporting the last text sent - the panel itself is clear.
 
-#cmdSetup separator - Fine_Adjust
+#cmdSetup separator - FineAdjust
 1 100 Sunken
 
-#cmdSetup separator - Fine_Adjust
+#cmdSetup separator - FineAdjust
 :labelformat: bold (80,80,80)
 1 100 Empty
 center Voltage
 
-#cmdSetup separator - Fine_Adjust
+#cmdSetup separator - FineAdjust
 1 100 Sunken
 
 ; Named _Increment rather than _Step: this sets how far the Down/Up buttons move
 ; per press, not a value to sweep. TestController's Steps popup lists every
 ; adjustable field by name regardless of page, and "..._Step" reads exactly like
 ; something meant for a Steps program - it is not.
-#cmdSetup number Voltage_Increment Fine_Adjust
+#cmdSetup number Voltage_Increment FineAdjust
 :read: [20];VOLT:STEP?
 :write: VOLT:STEP
 :format: D6
@@ -451,13 +551,13 @@ center Voltage
 :tip: Amount each Voltage Down/Up press moves the output voltage.
 V VoltageStepMin HighVoltageMax
 
-#cmdSetup button Smallest_Voltage_Increment Fine_Adjust
+#cmdSetup button Smallest_Voltage_Increment FineAdjust
 :write: VOLT:STEP DEF
 :updatedelayed: 0.2
 :update: Voltage_Increment
 :tip: Set the increment to the instrument's finest voltage resolution.
 
-#cmdSetup buttons Voltage_Adjust Fine_Adjust
+#cmdSetup buttons Voltage_Adjust FineAdjust
 :write: VOLT
 :updatedelayed: 0.2
 :update: Voltage
@@ -465,21 +565,21 @@ V VoltageStepMin HighVoltageMax
 Down DOWN
 Up UP
 
-#cmdSetup separator - Fine_Adjust
+#cmdSetup separator - FineAdjust
 6 100 Empty
 
-#cmdSetup separator - Fine_Adjust
+#cmdSetup separator - FineAdjust
 1 100 Sunken
 
-#cmdSetup separator - Fine_Adjust
+#cmdSetup separator - FineAdjust
 :labelformat: bold (80,80,80)
 1 100 Empty
 center Current
 
-#cmdSetup separator - Fine_Adjust
+#cmdSetup separator - FineAdjust
 1 100 Sunken
 
-#cmdSetup number Current_Increment Fine_Adjust
+#cmdSetup number Current_Increment FineAdjust
 :read: [20];CURR:STEP?
 :write: CURR:STEP
 :format: D6
@@ -487,16 +587,16 @@ center Current
 :tip: Amount each Current Down/Up press moves the current limit.
 A CurrentStepMin HighCurrentMax
 
-#cmdSetup button Smallest_Current_Increment Fine_Adjust
+#cmdSetup button Smallest_Current_Increment FineAdjust
 :write: CURR:STEP DEF
 :updatedelayed: 0.2
 :update: Current_Increment
 :tip: Set the increment to the instrument's finest current resolution.
 
-#cmdSetup buttons Current_Adjust Fine_Adjust
+#cmdSetup buttons Current_Adjust FineAdjust
 :write: CURR
 :updatedelayed: 0.2
-:update: Current_Limit
+:update: Current
 :tip: Move the current limit down or up by one step. The supply refuses a move that would leave the selected range.
 Down DOWN
 Up UP
@@ -536,7 +636,7 @@ On 1
 #cmdSetup indicator OVP_Tripped Protection
 :read: [20];VOLT:PROT:TRIP?
 :tip: Lights when overvoltage protection has fired. The output stays off until the trip is cleared.
-Clear 0 green
+Clear int(value)==0 green
 Tripped int(value)==1 red
 
 #cmdSetup button Clear_OVP_Trip Protection
@@ -581,7 +681,7 @@ On 1
 #cmdSetup indicator OCP_Tripped Protection
 :read: [20];CURR:PROT:TRIP?
 :tip: Lights when overcurrent protection has fired.
-Clear 0 green
+Clear int(value)==0 green
 Tripped int(value)==1 red
 
 #cmdSetup button Clear_OCP_Trip Protection
@@ -638,7 +738,7 @@ center Pending Setpoints
 :format: D4
 :buttontext: Set
 :tip: Voltage that a trigger will transfer to the live setpoint.
-V 0 inList(Main.Output_Range,"LOW,0")?LowVoltageMax:HighVoltageMax
+V 0 inList(Output_Range,"LOW,0")?LowVoltageMax:HighVoltageMax
 
 #cmdSetup advNumber Pending_Current Trigger
 :read: [20];CURR:TRIG?
@@ -646,7 +746,7 @@ V 0 inList(Main.Output_Range,"LOW,0")?LowVoltageMax:HighVoltageMax
 :format: D4
 :buttontext: Set
 :tip: Current limit that a trigger will transfer to the live setpoint.
-A 0 inList(Main.Output_Range,"LOW,0")?LowCurrentMax:HighCurrentMax
+A 0 inList(Output_Range,"LOW,0")?LowCurrentMax:HighCurrentMax
 
 #cmdSetup separator - Trigger
 6 100 Empty
@@ -654,13 +754,13 @@ A 0 inList(Main.Output_Range,"LOW,0")?LowCurrentMax:HighCurrentMax
 #cmdSetup button Arm Trigger
 :write: INIT
 :updatedelayed: 0.2
-:update: Voltage Current_Limit
+:update: Voltage Current
 :tip: Arm the trigger. With source Bus the supply then waits for Trigger Now; with Immediate the pending values are applied at once.
 
 #cmdSetup button Trigger_Now Trigger
 :write: *TRG;*WAI
 :updatedelayed: 0.2
-:update: Voltage Current_Limit
+:update: Voltage Current
 :tip: Fire the bus trigger, applying the pending setpoints. Only has an effect after Arm, with the source set to Bus.
 
 #cmdSetup button Beep Utility
@@ -705,3 +805,4 @@ center Diagnostics
 :read: [20];STAT:QUES:ENAB?
 :buttontext: Read Mask
 :tip: Read the Questionable Status enable mask without clearing event bits.
+
