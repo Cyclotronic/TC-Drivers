@@ -10,7 +10,7 @@ from the data sheet.
 | | |
 | --- | --- |
 | **Driver** | [`HP_Agilent_E363xA.txt`](HP_Agilent_E363xA.txt) |
-| **Revision** | 1.4 |
+| **Revision** | 1.5 |
 | **Interface** | GPIB, RS-232 |
 | **Instrument notes** | [`instrument-notes.md`](instrument-notes.md) |
 
@@ -42,15 +42,25 @@ complaint. See [`instrument-notes.md`](instrument-notes.md).
 Temperature, the three stored states and the front-panel display controls sit beneath
 the setpoints, since none of them belong behind a tab you have to go looking for.
 
+The display is also exposed to TestController itself, so a step or the Remote Readout
+popup can write a short label to it without going through this tab. The supply holds 12
+characters.
+
 ---
 
 ## Fine Adjust
 
 ![Fine Adjust tab](screenshots/e363xa-fine-adjust.png)
 
-The knob equivalent: set a step, then nudge the live setpoint with Down/Up. **Smallest
-Step** sets the instrument's finest resolution — 0.0003644 V and 0.0003802 A on the
-E3633A.
+The knob equivalent: set an increment, then nudge the live setpoint with Down/Up.
+**Smallest Voltage Increment** and **Smallest Current Increment** set the instrument's
+finest resolution — 0.0003644 V and 0.0003802 A on the E3633A.
+
+The fields are named `_Increment` rather than `_Step` because they set how far one
+Down/Up press moves the output, not a value to sweep — and TestController's Steps popup
+lists every adjustable field by name, where "..._Step" reads like something meant for a
+Steps program. *The screenshot above predates that rename and still shows the old
+labels.*
 
 ---
 

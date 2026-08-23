@@ -1,7 +1,7 @@
 ; ==============================================================================
 ; TestController Driver Definition: HP / Agilent / Keysight E363xA DC Supplies
 ; ==============================================================================
-; Covers the E3632A, E3633A and E3634A.  Revision 1.4 - 2026-08-19
+; Covers the E3632A, E3633A and E3634A.  Revision 1.5 - 2026-08-23
 ;
 ; Command syntax verified against the Keysight E3633A/E3634A User's Guide
 ; 9018-01164 (ed. 7), the E3632A User's Guide 9018-01309 and the E363xA data
