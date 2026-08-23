@@ -12,11 +12,11 @@
 ;            found on the bench, all of them silent - nothing reaches the error
 ;            queue for any of them: TestController's automated tools do not
 ;            switch the output on for a multi-channel driver, *RCL does not
-;            restore TRIG:DEL, and a channel re-select landing between INIT and
-;            *TRG disarms an armed trigger. The last is worked around by
-;            chaining arm and fire into one message; the other two are warned
-;            about in the tips beside the controls that hit them. All three are
-;            written up in instrument-notes.md beside this file.
+;            restore TRIG:DEL intact, and a channel re-select landing between
+;            INIT and *TRG disarms an armed trigger. The last is worked around
+;            by chaining arm and fire into one message; the other two are
+;            warned about in the tips beside the controls that hit them. All
+;            three are written up in instrument-notes.md beside this file.
 ;
 ; Revision   1.2
 ; Date       2026-08-23
@@ -380,7 +380,7 @@ Location_3 3
 :write: *RCL #;[*OPC]
 :updatedelayed: 0.3
 :update: Voltage Current Voltage2 Current2 Voltage3 Current3 Output Track Trigger_Source Trigger_Delay
-:tip: Recall a stored instrument state. TRIG:DEL is NOT restored - it comes back 0.00 whatever was saved, contrary to the manual. Re-enter the delay by hand after every recall. Every other target in the update list above does restore correctly.
+:tip: Recall a stored instrument state. TRIG:DEL does not come back intact - 2.500 s returned as 2.000, 3.750 s as 3.000. Re-enter it by hand after a recall. Every other target in the update list above restores correctly.
 Location_1 1
 Location_2 2
 Location_3 3

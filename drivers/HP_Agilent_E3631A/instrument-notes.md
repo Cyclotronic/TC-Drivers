@@ -148,15 +148,28 @@ With `Trigger Source` set to `Immediate`, the transfer happens on the arm and th
 
 ---
 
-## Recall does not restore the trigger delay
+## Recall does not restore the trigger delay faithfully
 
-`*RCL` brings `TRIG:DEL` back as `0.00` whatever was stored, contrary to the manual. This
-was isolated with `TRIG:SOUR` held constant, so it is the delay specifically and not a
-general failure of the trigger subsystem to restore: setpoints, output state, tracking and
-trigger source all come back correctly.
+`*RCL` brings `TRIG:DEL` back changed, contrary to the manual. Measured twice, the first
+confirmed on the wire with `TRIG:DEL?` returning `+2.00000000E+00`:
 
-Re-enter the delay after a recall. Nothing warns you, and a stored delay of several seconds
-silently becoming zero turns a delayed step into an immediate one.
+| Stored | Changed to before the recall | After `*RCL` |
+| --- | --- | --- |
+| 2.500 s | 1.000 s | 2.000 s |
+| 3.750 s | 0.250 s | 3.000 s |
+
+Isolated with `TRIG:SOUR` held constant, so it is the delay specifically and not a general
+failure of the trigger subsystem to restore: setpoints, output state, tracking and trigger
+source all come back correctly.
+
+Both points are consistent with the fractional part being dropped, but two points do not
+pin a rule and nothing below 1 s has been tried. An earlier session recorded this as "comes
+back 0.00 whatever was saved"; that reading is superseded, and it is what a sub-second
+stored delay would look like if the fraction is in fact being dropped — which is the case
+still worth testing.
+
+Re-enter the delay after a recall. Nothing warns you, and a stored delay silently losing
+its fraction turns a calibrated step into a different one.
 
 ---
 

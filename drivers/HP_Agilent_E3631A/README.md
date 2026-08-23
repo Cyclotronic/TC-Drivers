@@ -61,19 +61,24 @@ nothing can interleave with. The cost is that **arm-now-fire-later is not offere
 this page** — which is the point of a bus trigger. To do that, stop logging and drive
 `INIT` and `*TRG` from a script.
 
-### Recall does not restore the trigger delay
+### Recall does not restore the trigger delay faithfully
 
-`*RCL` brings back `TRIG:DEL` as `0.00` whatever was stored, contrary to the manual.
+`*RCL` brings `TRIG:DEL` back changed, contrary to the manual. Two runs on the bench, the
+first confirmed on the wire with `TRIG:DEL?`:
+
+| Stored | Changed to before the recall | After `*RCL` |
+| --- | --- | --- |
+| 2.500 s | 1.000 s | **2.000 s** |
+| 3.750 s | 0.250 s | **3.000 s** |
+
 Isolated with `TRIG:SOUR` held constant; every other recalled setting — setpoints, output
-state, tracking, trigger source — restores correctly.
+state, tracking, trigger source — restores correctly, so it is the delay specifically and
+not a general failure of the trigger subsystem to restore.
 
-![Trigger delay after a recall](screenshots/e3631a-recall-trigger-delay.png)
-
-Immediately after a `Recall State`: the stored setpoints and output state are all back,
-and `Trigger Delay` reads `0.000`. Re-enter the delay by hand after every recall.
-
-*This capture predates revision 1.2 and still shows the separate `Arm` and `Trigger Now`
-buttons that 1.2 merged into `Apply Pending Values`.*
+Both measurements are consistent with the fractional part being dropped, but that is an
+inference from two points and has not been tested below 1 s. Treat the delay as unreliable
+across a recall and re-enter it by hand: nothing warns you, and a stored delay silently
+losing its fraction turns a calibrated step into a different one.
 
 ---
 
@@ -122,10 +127,6 @@ With `Trigger Source` set to `Immediate`, the transfer happens on the arm and th
 `*TRG` has nothing left to fire; check the error queue on the Diagnostics panel if you use
 that combination.
 
-*This capture predates revision 1.2. The `Arm` and `Trigger Now` buttons at the bottom
-were merged into the single `Apply Pending Values` control in 1.2, for the reason given
-above; everything else on the page is current.*
-
 ---
 
 ## Memory
@@ -135,7 +136,7 @@ Three save locations and three recall buttons, shown at the bottom of the
 
 `Save State` writes the instrument state to non-volatile memory; `Recall State` brings it
 back and refreshes the setpoints, output, tracking and trigger source. `Trigger Delay` is
-the one thing that does **not** come back — see above.
+the one thing that does **not** come back intact — see above.
 
 ---
 
