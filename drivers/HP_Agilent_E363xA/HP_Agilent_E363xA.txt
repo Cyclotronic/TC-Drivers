@@ -253,8 +253,12 @@ SetModeVI
 ; interfaces carry no (channel) token, so TC evaluates the command as a script
 ; expression rather than doing a plain (value) substitution - hence the
 ; concatenation that wraps the text in quotes for DISP:TEXT, exactly as the
-; stock display drivers do. The display holds up to 12 characters; longer or
-; unsupported text is rejected with a -150 String data error.
+; stock display drivers do. The display holds up to 12 characters; longer text
+; is truncated to 12 silently and queues no error - bench-confirmed, and not
+; the -150 String data error that was expected. An embedded double quote is a
+; separate trap: it closes the concatenation early, giving DISP:TEXT "AB"CD",
+; which the supply rejects with -103,"Invalid separator", discards, and leaves
+; the previous text in place - so that one fails safe, but silently.
 #interface setReadoutString DISP:TEXT ("\""+value+"\"")
 
 ; ==============================================================================
