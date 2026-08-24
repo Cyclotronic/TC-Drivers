@@ -1,0 +1,96 @@
+; Leo Bodnar LBE-1420 GPS/GNSS Receiver - TestController driver
+;
+; Coverage   LBE-1420 over a serial port at 9600 8N1. Read-only - the receiver
+;            is never commanded, and there is no setup sequence and no mode
+;            page. Ten logged channels: latitude, longitude, satellites,
+;            altitude, speed, HDOP, UTC time, fix quality, geoid separation
+;            and course, lifted from the $GNRMC and $GNGGA sentences of the
+;            NMEA stream and converted to decimal degrees, km/h and seconds
+;            past midnight.
+;
+; Verified   Shipped, not freshly captured. This is revision 1.1 as submitted
+;            upstream and shipped in TestController V3.48 (12 August 2026),
+;            unchanged since and with no revision asked for. No LBE-1420 was
+;            on hand for a re-check at this release, so what stands behind the
+;            file is that shipped copy rather than a capture taken today. The
+;            framing assumes the receiver emits $GNRMC, $GNVTG and $GNGGA as
+;            one repeating group; a receiver emitting a different set, or
+;            GPS-only $GP sentences, will not match. See instrument-notes.md
+;            beside this file.
+;
+; Revision   1.1
+; Date       2026-08-12
+; Author     Cyclotron
+; License    MIT - see LICENSE
+;
+; TestController V3.48 and later already ship this definition. Both files claim
+; the same #idString and #name, and only one can win the match - keep one of
+; the two in the Devices folder.
+;
+; Latest version: https://github.com/Cyclotronic/TC-Drivers
+; TestController by HKJ: https://lygte-info.dk/project/TestControllerIntro%20UK.html
+; Discussion: https://www.eevblog.com/forum/testgear/program-that-can-log-from-many-multimeters/
+
+#idString $GN
+#name LBE-1420 GPS
+#handle LBE1420
+#port com
+#baudrate 9600
+#driver AsciiBlock
+#eol \r\n
+#rxEol \r\n
+
+#notes LBE-1420 GPS / GNSS Receiver (Passive NMEA Streaming with Position, UTC Time, Fix Quality, Geoid & Heading)
+
+; ===================================================================
+; Value Definitions for Logging / Display
+; ===================================================================
+#value Latitude _ D6
+#value Longitude _ D6
+#value Satellites _ Int
+#value Altitude m D1
+#value Speed km/h D1
+#value HDOP _ D2
+#value UTC_Time s TIME
+#value Fix_Quality _ Int
+#value Geoid_Separation m D1
+#value Course Deg D1
+
+; ===================================================================
+; Stream Framing & Multi-Sentence Regex Match
+; ===================================================================
+; Frame 3 incoming lines starting at $GNRMC ($GNRMC, $GNVTG, $GNGGA)
+#rxStart $GNRMC,
+#rxEnd \r\n
+#rxCount 3
+
+; Multi-line regex capture groups:
+; Group 1: UTC Time raw hhmmss.ss (from $GNRMC)
+; Group 2: Speed in knots (from $GNRMC)
+; Group 3: Course over ground in degrees (from $GNRMC)
+; Group 4: Latitude raw DDMM.MMMMM (from $GNGGA)
+; Group 5: N/S indicator
+; Group 6: Longitude raw DDDMM.MMMMM
+; Group 7: E/W indicator
+; Group 8: Fix Quality (0 = invalid, 1 = GPS, 2 = DGPS/SBAS, 4 = RTK, etc.)
+; Group 9: Satellites count
+; Group 10: HDOP
+; Group 11: Altitude (meters)
+; Group 12: Geoidal Separation (meters)
+#rxFormat (?s)\$GNRMC,([0-9.]+),.*?,.*?,.*?,.*?,.*?,([0-9.]+),([0-9.]*),.*?\$GNGGA,.*?,([0-9.]+),([NS]),([0-9.]+),([EW]),([0-9]+),([0-9]+),([0-9.]+),([0-9.-]+),M,([0-9.-]+)
+
+; Read background frame buffer
+#askValues values?
+
+; Output Value Mapping:
+; 1: Latitude (Decimal Degrees)
+; 2: Longitude (Decimal Degrees)
+; 3: Satellites count
+; 4: Altitude (m)
+; 5: Speed (km/h)
+; 6: HDOP
+; 7: UTC_Time (seconds past midnight for TIME format display)
+; 8: Fix_Quality (0=None, 1=GPS, 2=DGPS/WAAS)
+; 9: Geoid_Separation (m)
+; 10: Course (Degrees True)
+#askValuesMathFormat (double(substring(getElement(value,3," "),0,2)) + double(substring(getElement(value,3," "),2))/60.0) * (getElement(value,4," ") == "S" ? -1 : 1) + ";" + (double(substring(getElement(value,5," "),0,3)) + double(substring(getElement(value,5," "),3))/60.0) * (getElement(value,6," ") == "W" ? -1 : 1) + ";" + getElement(value,8," ") + ";" + getElement(value,10," ") + ";" + (double(getElement(value,1," ")) * 1.852) + ";" + getElement(value,9," ") + ";" + (double(substring(getElement(value,0," "),0,2))*3600 + double(substring(getElement(value,0," "),2,4))*60 + double(substring(getElement(value,0," "),4))) + ";" + getElement(value,7," ") + ";" + getElement(value,11," ") + ";" + double("0" + getElement(value,2," "))

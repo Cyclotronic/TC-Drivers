@@ -1,0 +1,798 @@
+; Agilent / Keysight 33250A Arbitrary Waveform Generator - TestController driver
+;
+; Coverage   Agilent 33250A and Keysight 33250A, the 80 MHz function /
+;            arbitrary waveform generator. One definition carries both device
+;            names, split on the *IDN? manufacturer prefix.
+;            Sine, square, ramp, pulse, noise, DC and arbitrary output;
+;            amplitude in Vpp, Vrms or dBm or as high and low levels; output
+;            load; AM, FM and FSK; sweep with a marker; triggered and gated
+;            burst; the trigger subsystem and the trigger output; display
+;            text, beeper, five stored states and the error queue.
+;            Frequency, amplitude and offset are logged.
+;
+; Verified   Nothing here was re-measured for this publication - no 33250A was
+;            to hand. The record is what the file documents from the
+;            instrument it was written against: the pulse command headers
+;            confirmed on firmware 2.04-1.01-2.00-03-2, and the arb name
+;            substitution seen on the wire. It has been in service over GPIB,
+;            and HKJ took it into TestController V3.48 (12 August 2026) with
+;            no changes asked for. The display-text write is marked untested
+;            in the body. See instrument-notes.md beside this file.
+;
+; Revision   1.0
+; Date       2026-07-30
+; Author     Cyclotron
+; License    MIT - see LICENSE
+;
+; TestController V3.48 and later ships this driver as "Agilent 33250a.txt".
+; Two files claiming the same #idString cannot both win the match, so move the
+; shipped one out of the Devices folder if you install this copy.
+;
+; Latest version: https://github.com/Cyclotronic/TC-Drivers
+; TestController by HKJ: https://lygte-info.dk/project/TestControllerIntro%20UK.html
+; Discussion: https://www.eevblog.com/forum/testgear/program-that-can-log-from-many-multimeters/
+
+; ----------------------------------------------------------------------
+; Device variants
+;
+; The base definition below is marked #meta, so it does not itself show
+; up in the device list; the #metadef blocks here create the selectable
+; devices from it. A #metadef can only REPLACE tags that already exist
+; in the #meta block - it cannot introduce new ones.
+; ----------------------------------------------------------------------
+
+#metadef
+#idString Agilent Technologies,33250A,
+#name Agilent 33250A
+#handle A33250
+
+#metadef
+#idString Keysight Technologies,33250A,
+#name Keysight 33250A
+#handle K33250
+
+; There is deliberately no HEWLETT-PACKARD variant. The 33250A was
+; introduced after the 1999 HP/Agilent split, so no unit ships an
+; *IDN? beginning with HEWLETT-PACKARD.
+
+
+; ----------------------------------------------------------------------
+; Base definition
+; ----------------------------------------------------------------------
+
+#meta
+#idString Agilent Technologies,33250A,
+#name Agilent 33250A
+#handle A33250
+#port com GPIB
+#baudrate 57600
+#driver SCPI
+#author Cyclotron
+
+; GPIB defaults are correct for this instrument: it terminates on EOI
+; and needs no inter-command padding. If a clone adapter drops replies,
+; try adding:
+;   #gpibWriteDelay 5
+
+
+; ----------------------------------------------------------------------
+; Connect / disconnect
+;
+; VOLT:UNIT is forced to VPP at connect because VOLT? returns whatever
+; unit the instrument happens to be in, and every amplitude limit in
+; this file assumes Vpp. The unit is still selectable on the System
+; page if you need Vrms or dBm.
+;
+; SYST:REM is deliberately NOT sent: on the 33250A the remote/local
+; commands apply to RS-232 only and will error over GPIB. If you use
+; the serial port and want front-panel lockout, switch to
+; "#driver SCPIx" and use the conditional form:
+;   #scpiCmd MyRemote #pgm#
+;   if (portType!="GPIB")
+;    deviceWrite(handle,"SYST:REM;");
+;   endif;
+; ----------------------------------------------------------------------
+
+#initCmd *CLS;VOLT:UNIT VPP
+
+; Leaves the output off and the error queue clear on disconnect.
+#finalCmd OUTP OFF;*CLS
+
+; "Outputs off" button.
+#outputOff OUTP OFF
+
+
+; ----------------------------------------------------------------------
+; Logged columns
+;
+; No mode selector field here - this instrument has no #askMode /
+; #cmdMode modes, so a fourth field would prevent the columns from ever
+; being displayed.
+; ----------------------------------------------------------------------
+
+#value Frequency Hz SI
+#value Amplitude Vpp SI
+#value Offset V SI
+
+; Sent once per logging interval. The semicolons make TC send three
+; separate lines, which sidesteps SCPI compound-header path rules.
+#askValues FREQ?;VOLT?;VOLT:OFFS?
+
+
+; ======================================================================
+; PAGE: Main
+; ======================================================================
+
+#cmdSetup buttonsOn Output Main
+:read: OUTP?
+:write: OUTP
+:tip: Front panel Output BNC on/off
+:updatealloff:
+:update: Main.Output
+Off 0
+On 1
+
+#cmdSetup combobox Load Main
+:read: OUTP:LOAD?
+:readmath: getElement("INF "+formatInt(limit(double(value),1,10000),1,10),double(value)<1e30)
+:write: OUTP:LOAD
+:string:
+:tip: Expected load. This scales the displayed amplitude and offset AND changes their legal ranges.
+:update: Main.Amplitude Main.Offset
+50_Ohm 50
+75_Ohm 75
+100_Ohm 100
+600_Ohm 600
+1_kOhm 1000
+10_kOhm 10000
+High_Z INF
+
+#cmdSetup separator - Main
+2 100 Solid
+center Carrier
+
+#cmdSetup comboboxHot Waveform Main
+:read: FUNC?
+:write: FUNC
+:string:
+:tip: Frequency, duty cycle and symmetry limits all follow this selection
+:update: Main.Frequency Main.Amplitude Wave.Duty_Cycle Wave.Symmetry Wave.Pulse_Period Wave.Pulse_Width Wave.Edge_Time Wave.Arb_Shape Modulation.AM Modulation.FM Modulation.FSK Sweep.Enabled Burst.Enabled
+:updatedelayed: 0.1
+Sine SIN
+Square SQU
+Ramp RAMP
+Pulse PULS
+Noise NOIS
+DC DC
+Arbitrary USER
+
+; ---- Frequency, amplitude and offset ---------------------------------
+
+#cmdSetup number Frequency Main
+:read: FREQ?
+:write: FREQ
+:format: SI7
+:tip: Sine and square reach 80 MHz. Ramp stops at 1 MHz, pulse at 50 MHz, arb at 25 MHz, and pulse will not go below 500 uHz.
+Hz 1u 80M
+
+#cmdSetup number Amplitude Main
+:read: VOLT?
+:write: VOLT
+:format: X4
+:tip: Assumes VOLT:UNIT is VPP. Into 50 ohm the real range is 10 mVpp to 10 Vpp; only high-Z reaches 20 Vpp.
+:enable: !inList(Main.Waveform,"DC NOIS")
+Vpp 0.01 20
+
+#cmdSetup number Offset Main
+:read: VOLT:OFFS?
+:write: VOLT:OFFS
+:format: X4
+:update: Main.High_Level Main.Low_Level
+:tip: The reachable maximum is (5 V into 50 ohm, 10 V into high-Z) MINUS half the amplitude. At 2 mVpp into high-Z you get +/-9.999 V, never a full +/-10 V.
+Vdc -10 10
+
+; ---- Dynamic-limit variants (optional) -------------------------------
+#cmdSetup separator - Main
+2 100 Solid
+center High / Low
+
+; Alternative way to express amplitude+offset. Useful for logic-level
+; work where you care about the rails rather than the swing.
+#cmdSetup number High_Level Main
+:read: VOLT:HIGH?
+:write: VOLT:HIGH
+:update: Main.Amplitude Main.Offset Main.Low_Level
+:tip: Sets amplitude and offset together with Low_Level
+V -10 10
+
+#cmdSetup number Low_Level Main
+:read: VOLT:LOW?
+:write: VOLT:LOW
+:update: Main.Amplitude Main.Offset Main.High_Level
+:tip: High-Z only. Into 50 ohm the pair is limited to +/-5 V.
+V -10 10
+
+
+; ======================================================================
+; PAGE: Wave - waveform-specific parameters
+; ======================================================================
+
+#cmdSetup number Duty_Cycle Wave
+:read: FUNC:SQU:DCYC?
+:write: FUNC:SQU:DCYC
+:enable: inList(Main.Waveform,"SQU")
+:update: Wave.Duty_Cycle
+:tip: Carrier-frequency dependent. 20-80% up to 25 MHz, 40-60% from 25 to 60 MHz, and LOCKED AT 50% above 60 MHz - writes are silently ignored up there.
+% 20 80
+
+#cmdSetup number Symmetry Wave
+:read: FUNC:RAMP:SYMM?
+:write: FUNC:RAMP:SYMM
+:enable: inList(Main.Waveform,"RAMP")
+:tip: 0% = falling sawtooth, 50% = triangle, 100% = rising sawtooth
+% 0 100
+
+#cmdSetup separator - Wave
+2 100 Solid
+center Pulse
+
+; PULSE COMMAND HEADERS - CONFIRMED on firmware 2.04-1.01-2.00-03-2.
+
+#cmdSetup number Pulse_Period Wave
+:read: PULS:PER?
+:write: PULS:PER
+:enable: inList(Main.Waveform,"PULS")
+:update: Main.Frequency Wave.Pulse_Width
+:tip: Alternative to setting Frequency; the two track each other
+s 20n 2000
+
+#cmdSetup number Pulse_Width Wave
+:read: PULS:WIDT?
+:write: PULS:WIDT
+:enable: inList(Main.Waveform,"PULS")
+:update: Wave.Pulse_Period
+:tip: The 8 ns floor only applies at short periods. With a long period the instrument enforces a much larger minimum width and silently substitutes it.
+s 8n 1999.99
+
+#cmdSetup number Edge_Time Wave
+:read: PULS:TRAN?
+:write: PULS:TRAN
+:enable: inList(Main.Waveform,"PULS")
+:tip: Applies to both rising and falling edge; 5 ns minimum
+s 5n 1m
+
+
+#cmdSetup separator - Wave
+2 100 Solid
+center Arbitrary
+
+; ARB SELECTION - THE UNDERSCORE PROBLEM
+;
+; TC replaces every underscore with a space before the text reaches the
+; instrument, and it does this in BOTH the combobox parameter column
+; and the :write: tag of a button. Confirmed on the wire:
+;   A33250: Tx <FUNC:USER EXP RISE>   ... 45 58 50 20 52 49 53 45
+; So neither a combobox entry "Exp_Rise EXP_RISE" nor a button with
+; ":write: FUNC:USER EXP_RISE" can ever select the three built-in arbs
+; whose names contain an underscore. SINC and CARDIAC work only because
+; they have no underscore to lose.
+;
+; The way out is to stop putting the name in the config file at all.
+; A text control sends what YOU type at runtime, which is not subject to
+; the substitution. Type the name exactly as DATA:CAT? reports it:
+;   EXP_RISE  EXP_FALL  NEG_RAMP  SINC  CARDIAC
+; This also handles arbs you have downloaded yourself, which a fixed
+; list never could.
+;
+; If TC turns out to support :writemath: as the counterpart to
+; :readmath:, the nicer combobox below becomes possible - it puts the
+; underscore back after TC has removed it. You can tell in one run: the
+; debug log already prints "Rx after :readmath:" lines, so a working
+; write tag should produce a matching "Tx after :writemath:" line.
+; No such line means the tag was ignored.
+;
+; #cmdSetup combobox Arb_Shape Wave
+; :read: FUNC:USER?
+; :readmath: replace(value,"_"," ")
+; :write: FUNC:USER
+; :writemath: replace(value," ","_")
+; :string:
+; :enable: inList(Main.Waveform,"USER")
+; Exp_Rise EXP_RISE
+; Exp_Fall EXP_FALL
+; Neg_Ramp NEG_RAMP
+; Sinc SINC
+; Cardiac CARDIAC
+
+#cmdSetup text Arb_Shape Wave
+:read: FUNC:USER?
+:write: FUNC:USER
+:string:
+:enable: inList(Main.Waveform,"USER")
+:tip: Type the name exactly as shown in Arb_Catalog below - EXP_RISE, EXP_FALL, NEG_RAMP, SINC, CARDIAC, or the name of an arb you have downloaded. Do not quote it.
+16
+
+; The only two built-ins that survive the underscore substitution, kept
+; as shortcuts. There is deliberately no button for the other three -
+; they cannot work, see above.
+
+#cmdSetup button Arb_Sinc Wave
+:write: FUNC:USER SINC
+:enable: inList(Main.Waveform,"USER")
+:update: Wave.Arb_Shape
+
+#cmdSetup button Arb_Cardiac Wave
+:write: FUNC:USER CARDIAC
+:enable: inList(Main.Waveform,"USER")
+:update: Wave.Arb_Shape
+
+#cmdSetup infoAsk Arb_Catalog Wave
+:read: DATA:CAT?
+:tip: Lists waveforms currently available (built-in, volatile and stored)
+
+#cmdSetup infoAsk Free_Arb_Slots Wave
+:read: DATA:NVOL:FREE?
+:tip: Non-volatile arb memory slots still available
+
+
+; ======================================================================
+; PAGE: Modulation
+;
+
+#cmdSetup buttonsOn AM Modulation
+:read: AM:STAT?
+:write: AM:STAT
+:enable: !inList(Main.Waveform,"NOIS DC")
+:tip: Carrier must be sine, square, ramp or arb. Enabling this switches off FM, FSK, sweep and burst.
+:updatealloff:
+:update: Modulation.FM Modulation.FSK Sweep.Enabled Burst.Enabled Modulation.AM_Depth Modulation.AM_Shape Modulation.AM_Rate Modulation.AM_Source
+Off 0
+On 1
+
+#cmdSetup number AM_Depth Modulation
+:read: AM:DEPT?
+:write: AM:DEPT
+:enable: inList(Modulation.AM,"1 On")
+:tip: Above 100% the envelope clips at the instrument's peak output
+% 0 120
+
+#cmdSetup combobox AM_Shape Modulation
+:read: AM:INT:FUNC?
+:write: AM:INT:FUNC
+:string:
+:enable: inList(Modulation.AM,"1 On")
+Sine SIN
+Square SQU
+Ramp RAMP
+Neg_Ramp NRAM
+Triangle TRI
+Noise NOIS
+Arbitrary USER
+
+#cmdSetup number AM_Rate Modulation
+:read: AM:INT:FREQ?
+:write: AM:INT:FREQ
+:enable: inList(Modulation.AM,"1 On")
+Hz 2m 20k
+
+#cmdSetup combobox AM_Source Modulation
+:read: AM:SOUR?
+:write: AM:SOUR
+:string:
+:enable: inList(Modulation.AM,"1 On")
+:tip: External uses the rear-panel Modulation In BNC (+/-5 V full scale)
+Internal INT
+External EXT
+
+#cmdSetup separator - Modulation
+2 100 Solid
+center FM
+
+#cmdSetup buttonsOn FM Modulation
+:read: FM:STAT?
+:write: FM:STAT
+:enable: !inList(Main.Waveform,"NOIS DC")
+:tip: Carrier must be sine, square, ramp or arb. Enabling this switches off AM, FSK, sweep and burst.
+:updatealloff:
+:update: Modulation.AM Modulation.FSK Sweep.Enabled Burst.Enabled Modulation.FM_Deviation Modulation.FM_Shape Modulation.FM_Rate Modulation.FM_Source
+Off 0
+On 1
+
+#cmdSetup number FM_Deviation Modulation
+:read: FM:DEV?
+:write: FM:DEV
+:enable: inList(Modulation.FM,"1 On")
+:tip: Bounded by the CARRIER, not by 80 MHz. Carrier +/- deviation must stay inside the active waveform's range, so with a low carrier or an arb selected almost every value you type will be refused outright. Set Main / Frequency first.
+Hz 0 80M
+
+#cmdSetup combobox FM_Shape Modulation
+:read: FM:INT:FUNC?
+:write: FM:INT:FUNC
+:string:
+:enable: inList(Modulation.FM,"1 On")
+Sine SIN
+Square SQU
+Ramp RAMP
+Neg_Ramp NRAM
+Triangle TRI
+Noise NOIS
+Arbitrary USER
+
+#cmdSetup number FM_Rate Modulation
+:read: FM:INT:FREQ?
+:write: FM:INT:FREQ
+:enable: inList(Modulation.FM,"1 On")
+Hz 2m 20k
+
+#cmdSetup combobox FM_Source Modulation
+:read: FM:SOUR?
+:write: FM:SOUR
+:string:
+:enable: inList(Modulation.FM,"1 On")
+Internal INT
+External EXT
+
+#cmdSetup separator - Modulation
+2 100 Solid
+center FSK
+
+#cmdSetup buttonsOn FSK Modulation
+:read: FSK:STAT?
+:write: FSK:STAT
+:enable: !inList(Main.Waveform,"NOIS DC")
+:tip: Carrier must be sine, square, ramp or arb. Enabling this switches off AM, FM, sweep and burst.
+:updatealloff:
+:update: Modulation.AM Modulation.FM Sweep.Enabled Burst.Enabled Modulation.FSK_Hop_Freq Modulation.FSK_Rate Modulation.FSK_Source
+Off 0
+On 1
+
+#cmdSetup number FSK_Hop_Freq Modulation
+:read: FSK:FREQ?
+:write: FSK:FREQ
+:enable: inList(Modulation.FSK,"1 On")
+:tip: The alternate frequency; the carrier is the Main page Frequency. Ceiling follows the Main waveform - 25 MHz with an arb selected, 1 MHz for ramp, 50 MHz for pulse.
+Hz 1u 80M
+
+#cmdSetup number FSK_Rate Modulation
+:read: FSK:INT:RATE?
+:write: FSK:INT:RATE
+:enable: inList(Modulation.FSK,"1 On")
+:tip: Internal source only. External keying uses the Ext Trig BNC.
+Hz 2m 100k
+
+#cmdSetup combobox FSK_Source Modulation
+:read: FSK:SOUR?
+:write: FSK:SOUR
+:string:
+:enable: inList(Modulation.FSK,"1 On")
+Internal INT
+External EXT
+
+
+; ======================================================================
+; PAGE: Sweep
+; ======================================================================
+
+#cmdSetup buttonsOn Enabled Sweep
+:read: SWE:STAT?
+:write: SWE:STAT
+:enable: !inList(Main.Waveform,"PULS NOIS DC")
+:tip: Sweep will not run on pulse, noise or DC. Enabling it switches off all modulation and burst.
+:updatealloff:
+:update: Modulation.AM Modulation.FM Modulation.FSK Burst.Enabled Sweep.Start Sweep.Stop Sweep.Sweep_Time Sweep.Spacing Sweep.Marker Sweep.Marker_Freq
+Off 0
+On 1
+
+#cmdSetup number Start Sweep
+:read: FREQ:STAR?
+:write: FREQ:STAR
+:enable: inList(Sweep.Enabled,"1 On")
+:update: Sweep.Marker_Freq
+:tip: Ceiling follows the Main waveform - 25 MHz with an arb selected, 1 MHz for ramp, 50 MHz for pulse. Entering 80 MHz against an arb silently gives you 25 MHz.
+Hz 1u 80M
+
+#cmdSetup number Stop Sweep
+:read: FREQ:STOP?
+:write: FREQ:STOP
+:enable: inList(Sweep.Enabled,"1 On")
+:update: Sweep.Marker_Freq
+:tip: Stop below Start gives a descending sweep. Same waveform-dependent ceiling as Start.
+Hz 1u 80M
+
+#cmdSetup number Sweep_Time Sweep
+:read: SWE:TIME?
+:write: SWE:TIME
+:enable: inList(Sweep.Enabled,"1 On")
+s 1m 500
+
+#cmdSetup combobox Spacing Sweep
+:read: SWE:SPAC?
+:write: SWE:SPAC
+:string:
+:enable: inList(Sweep.Enabled,"1 On")
+Linear LIN
+Logarithmic LOG
+
+#cmdSetup buttonsOn Marker Sweep
+:read: MARK?
+:write: MARK
+:enable: inList(Sweep.Enabled,"1 On")
+:tip: When off, the Sync BNC marks the whole sweep instead of the marker frequency
+:update: Sweep.Marker_Freq
+Off 0
+On 1
+
+#cmdSetup number Marker_Freq Sweep
+:read: MARK:FREQ?
+:write: MARK:FREQ
+:enable: inList(Sweep.Marker,"1 On")
+:tip: Coerced into the Start..Stop span the moment the marker is switched on, and capped by the active waveform like every other frequency here. If the value looks wrong, check Start and Stop first.
+Hz 1u 80M
+
+
+; ======================================================================
+; PAGE: Burst
+; ======================================================================
+
+#cmdSetup buttonsOn Enabled Burst
+:read: BURS:STAT?
+:write: BURS:STAT
+:enable: !inList(Main.Waveform,"NOIS DC")
+:tip: Triggered burst needs sine, square, ramp, pulse or arb. Enabling it switches off all modulation and sweep.
+:updatealloff:
+:update: Modulation.AM Modulation.FM Modulation.FSK Sweep.Enabled Burst.Mode Burst.Cycles Burst.Burst_Period Burst.Start_Phase Burst.Gate_Polarity
+Off 0
+On 1
+
+#cmdSetup combobox Mode Burst
+:read: BURS:MODE?
+:write: BURS:MODE
+:string:
+:enable: inList(Burst.Enabled,"1 On")
+:update: Burst.Cycles Burst.Burst_Period Burst.Gate_Polarity
+Triggered TRIG
+Gated GAT
+
+#cmdSetup numberInt Cycles Burst
+:read: BURS:NCYC?
+:write: BURS:NCYC
+:enable: inList(Burst.Enabled,"1 On")
+:update: Burst.Burst_Period
+:tip: Reads back as 9.9E+37 when set to infinite
+cyc 1 1000000
+
+; Named differently from the numberInt above on purpose - controls
+; sharing a name get grouped and synchronised together.
+#cmdSetup buttons Set_Infinite Burst
+:write: BURS:NCYC
+:enable: inList(Burst.Enabled,"1 On")
+:update: Burst.Cycles
+Infinite INF
+
+#cmdSetup number Burst_Period Burst
+:read: BURS:INT:PER?
+:write: BURS:INT:PER
+:enable: inList(Burst.Enabled,"1 On")
+:tip: Internal trigger only. Must exceed cycles / carrier frequency.
+s 1u 500
+
+#cmdSetup number Start_Phase Burst
+:read: BURS:PHAS?
+:write: BURS:PHAS
+:enable: inList(Burst.Enabled,"1 On")
+deg -360 360
+
+#cmdSetup combobox Gate_Polarity Burst
+:read: BURS:GATE:POL?
+:write: BURS:GATE:POL
+:string:
+:enable: inList(Burst.Enabled,"1 On")
+:tip: Gated mode only - polarity of the rear-panel gate input
+Normal NORM
+Inverted INV
+
+
+; ======================================================================
+; PAGE: Trigger - shared by sweep and burst
+; ======================================================================
+
+#cmdSetup combobox Source Trigger
+:read: TRIG:SOUR?
+:write: TRIG:SOUR
+:string:
+:update: Trigger.Slope Trigger.Delay
+:tip: Immediate = free run, Bus = software *TRG, External = rear BNC
+Immediate IMM
+External EXT
+Bus BUS
+
+#cmdSetup combobox Slope Trigger
+:read: TRIG:SLOP?
+:write: TRIG:SLOP
+:string:
+:enable: inList(Trigger.Source,"EXT")
+Positive POS
+Negative NEG
+
+#cmdSetup number Delay Trigger
+:read: TRIG:DEL?
+:write: TRIG:DEL
+:tip: Delay between trigger and start of sweep/burst
+s 0 85
+
+#cmdSetup button Send_Trigger Trigger
+:write: *TRG
+:tip: Software trigger - only acts when Source is set to Bus
+
+#cmdSetup separator - Trigger
+2 100 Solid
+center Trigger output
+
+#cmdSetup buttonsOn Trig_Out Trigger
+:read: OUTP:TRIG?
+:write: OUTP:TRIG
+:update: Trigger.Trig_Out_Slope
+:tip: Cannot be enabled while the Ext Trig BNC is being used as an input. Set Source away from External first.
+Off 0
+On 1
+
+#cmdSetup combobox Trig_Out_Slope Trigger
+:read: OUTP:TRIG:SLOP?
+:write: OUTP:TRIG:SLOP
+:string:
+:enable: inList(Trigger.Trig_Out,"1 On")
+Positive POS
+Negative NEG
+
+
+; ======================================================================
+; PAGE: System
+; ======================================================================
+
+#cmdSetup infoAsk Last_error System
+:read: SYST:ERR?
+:tip: Pops ONE entry off a queue that holds up to 20. The 33250A clips and refuses settings silently, so this is the only way to find out why a value did not take - press Get repeatedly until it reports no error.
+
+#cmdSetup button Clear_Errors System
+:write: *CLS
+:tip: Empties the error queue so the next Get shows only fresh errors
+:update: System.Last_error
+
+#cmdSetup separator - System
+2 100 Solid
+center Output conditioning
+
+#cmdSetup combobox Amplitude_Unit System
+:read: VOLT:UNIT?
+:write: VOLT:UNIT
+:string:
+:update: Main.Amplitude
+:tip: WARNING - the Main page amplitude limits assume VPP. Vrms and dBm ranges are lower and waveform-dependent.
+Vpp VPP
+Vrms VRMS
+dBm DBM
+
+#cmdSetup buttonsOn Auto_Range System
+:read: VOLT:RANG:AUTO?
+:write: VOLT:RANG:AUTO
+:tip: Off freezes the output attenuator - avoids glitches when stepping amplitude, at the cost of range
+Off 0
+On 1
+
+#cmdSetup combobox Polarity System
+:read: OUTP:POL?
+:write: OUTP:POL
+:string:
+:tip: Inverts the waveform about the offset voltage, not about zero
+Normal NORM
+Inverted INV
+
+#cmdSetup buttonsOn Sync_Output System
+:read: OUTP:SYNC?
+:write: OUTP:SYNC
+:tip: Turning Sync off reduces feedthrough on the main output at low amplitudes
+Off 0
+On 1
+
+#cmdSetup separator - System
+2 100 Solid
+center Instrument
+
+#cmdSetup buttonsOn Display System
+:read: DISP?
+:write: DISP
+:update: System.Display_Text
+Off 0
+On 1
+
+#cmdSetup text Display_Text System
+:read: DISP:TEXT?
+; Instrument answers with the string still wrapped in double quotes.
+:readmath: unQuote(value)
+:write: DISP:TEXT
+:string:
+; UNTESTED WRITE. DISP:TEXT expects a quoted argument, so unless TC adds
+; the quotes itself you may need to type them: "Hello". Underscores you
+; type here are safe - the substitution only affects text that comes
+; from this config file. Check System / Last error if nothing appears.
+:tip: Message shown on the front panel. If it does not take, try typing the text inside double quotes.
+40
+
+#cmdSetup button Clear_Display_Text System
+:write: DISP:TEXT:CLE
+:update: System.Display_Text
+
+#cmdSetup buttonsOn Beeper System
+:read: SYST:BEEP:STAT?
+:write: SYST:BEEP:STAT
+Off 0
+On 1
+
+#cmdSetup separator - System
+2 100 Solid
+center Stored states
+
+#cmdSetup buttons Recall System
+:write: *RCL
+:tip: Recall one of the five stored instrument states
+:update: Main.Output Main.Waveform Main.Frequency Main.Amplitude Main.Offset
+0 0
+1 1
+2 2
+3 3
+4 4
+
+#cmdSetup buttons Store System
+:write: *SAV
+:tip: Save the current setup to a state register
+0 0
+1 1
+2 2
+3 3
+4 4
+
+#cmdSetup separator - System
+2 100 Solid
+
+#cmdSetup button Reset_Instrument System
+:write: *RST;*CLS
+:tip: Full *RST - turns the output off and returns every setting to default
+:update: Main.Output Main.Waveform Main.Frequency Main.Amplitude Main.Offset Main.Load
+
+#cmdSetup infoAsk SCPI_Version System
+:read: SYST:VERS?
+
+
+#interfaceType ARB
+
+#interface setOn OUTP (value)
+#interface getOn OUTP?
+
+#interface setFrequency FREQ (value)
+#interface getFrequency FREQ?
+
+#interface setAmplitude VOLT (value)
+#interface getAmplitude VOLT?
+
+; VoltagePP is the name some scripts use for generator amplitude.
+#interface setVoltagePP VOLT (value)
+#interface getVoltagePP VOLT?
+
+#interface setOffset VOLT:OFFS (value)
+#interface getOffset VOLT:OFFS?
+
+#interface setWaveform FUNC (value)
+#interface getWaveform FUNC?
+:string:
+
+#interface setDutyCycle FUNC:SQU:DCYC (value)
+#interface getDutyCycle FUNC:SQU:DCYC?
+
+; Indexes into the #askValues answer: 0=FREQ? 1=VOLT? 2=VOLT:OFFS?
+#interface readFrequency 0
+#interface readAmplitude 1
+#interface readOffset 2
+
+
+
+

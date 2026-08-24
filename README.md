@@ -3,9 +3,12 @@
 Device drivers for [TestController](https://lygte-info.dk/project/TestControllerIntro%20UK.html),
 HKJ's program for logging and controlling bench instruments.
 
-Each driver here has been written against the instrument's programming manual and then
+Most drivers here were written against the instrument's programming manual and then
 **verified against the physical instrument** — every command exercised, and every
-per-range limit read back from the hardware rather than copied from a datasheet.
+per-range limit read back from the hardware rather than copied from a datasheet. Two
+were published from the definition already shipping with TestController, with no fresh
+capture taken. The table says which, and every driver's own header states exactly what
+stands behind it.
 
 Discussion and support for TestController itself is on the EEVblog thread
 [Program that can log/control many multimeters and other devices](https://www.eevblog.com/forum/testgear/program-that-can-log-from-many-multimeters/).
@@ -14,14 +17,21 @@ Discussion and support for TestController itself is on the EEVblog thread
 
 ## Drivers
 
-| Driver | Instruments | Interface | Rev |
-| --- | --- | --- | --- |
-| [Chroma 63000 Series](drivers/Chroma_63000_Series/) | Chroma 63003-150-40, 63004-150-60 DC electronic load | GPIB / LXI / serial | 1.4 |
-| [HP / Agilent E3631A](drivers/HP_Agilent_E3631A/) | HP E3631A triple-output DC power supply, +6 V / +25 V / -25 V | GPIB / RS-232 | 1.2 |
-| [HP / Agilent E363xA](drivers/HP_Agilent_E363xA/) | HP E3632A, E3633A, E3634A DC power supply | GPIB / RS-232 | 1.8 |
+| Driver | Instruments | Interface | Rev | Verified |
+| --- | --- | --- | --- | --- |
+| [Chroma 63000 Series](drivers/Chroma_63000_Series/) | Chroma 63003-150-40, 63004-150-60 DC electronic load | GPIB / LXI / serial | 1.4 | On hardware |
+| [HP / Agilent E3631A](drivers/HP_Agilent_E3631A/) | HP E3631A triple-output DC power supply, +6 V / +25 V / -25 V | GPIB / RS-232 | 1.2 | On hardware |
+| [HP / Agilent E363xA](drivers/HP_Agilent_E363xA/) | HP E3632A, E3633A, E3634A DC power supply | GPIB / RS-232 | 1.8 | On hardware |
+| [Agilent 33250A](drivers/Agilent_33250A/) | Agilent / Keysight 33250A 80 MHz function / arbitrary waveform generator | GPIB / RS-232 | 1.0 | As shipped |
+| [Leo Bodnar LBE-1420](drivers/LeoBodnar_LBE-1420/) | Leo Bodnar LBE-1420 GPS/GNSS receiver, read-only NMEA | Serial | 1.1 | As shipped |
 
-Each driver has its own folder containing the driver file, screenshots of every mode
-page, and notes on instrument behaviour worth knowing before you use it.
+**On hardware** — exercised against the instrument, limits read back from it.
+**As shipped** — this is the definition TestController itself ships, republished
+unchanged; no instrument was on hand to re-measure it for this release.
+
+Each driver has its own folder containing the driver file, notes on instrument
+behaviour worth knowing before you use it, and — where the instrument was on hand —
+screenshots of every mode page.
 
 ---
 
