@@ -8,9 +8,12 @@
 ;            NMEA stream and converted to decimal degrees, km/h and seconds
 ;            past midnight.
 ;
-; Verified   Shipped, not freshly captured. This is revision 1.1 as submitted
-;            upstream and shipped in TestController V3.48 (12 August 2026),
-;            unchanged since and with no revision asked for. No LBE-1420 was
+; Verified   Shipped, not freshly captured. The definition below is the one
+;            submitted upstream and shipped in TestController V3.48 (12 August
+;            2026). Revision 1.2 changes one thing and only one: #name becomes
+;            "Leo Bodnar LBE-1420", so the device carries its maker the way the
+;            rest of TestController's device list does. Requested by flash2b in
+;            the thread; not yet in a TestController release. No LBE-1420 was
 ;            on hand for a re-check at this release, so what stands behind the
 ;            file is that shipped copy rather than a capture taken today. The
 ;            framing assumes the receiver emits $GNRMC, $GNVTG and $GNGGA as
@@ -18,21 +21,23 @@
 ;            GPS-only $GP sentences, will not match. See instrument-notes.md
 ;            beside this file.
 ;
-; Revision   1.1
-; Date       2026-08-12
+; Revision   1.2
+; Date       2026-08-24
 ; Author     Cyclotron
 ; License    MIT - see LICENSE
 ;
 ; TestController V3.48 and later already ship this definition. Both files claim
-; the same #idString and #name, and only one can win the match - keep one of
-; the two in the Devices folder.
+; the same #idString ($GN), so only one can win the match no matter that the
+; #name now differs - keep one of the two in the Devices folder. Until this
+; rename reaches a release, using this copy means editing settingsLoad.txt:
+; a saved setup finds its device by #name, and the old one no longer matches.
 ;
 ; Latest version: https://github.com/Cyclotronic/TC-Drivers
 ; TestController by HKJ: https://lygte-info.dk/project/TestControllerIntro%20UK.html
 ; Discussion: https://www.eevblog.com/forum/testgear/program-that-can-log-from-many-multimeters/
 
 #idString $GN
-#name LBE-1420 GPS
+#name Leo Bodnar LBE-1420
 #handle LBE1420
 #port com
 #baudrate 9600

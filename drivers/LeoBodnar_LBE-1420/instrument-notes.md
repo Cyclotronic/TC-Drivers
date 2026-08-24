@@ -122,26 +122,36 @@ That is intended rather than a shortcut, and it has two consequences worth knowi
 
 ---
 
-## Shipped upstream, so unchanged here
+## Shipped upstream, so an edit here reaches nobody by itself
 
 TestController has shipped this definition since **V3.48**, 12 August 2026, credited *"Added:
 Leo Bodnar LBE-1420 GPS (Thanks Cyclotron)"*
 ([reply #7197](https://www.eevblog.com/forum/testgear/program-that-can-log-from-many-multimeters/msg6332536/#msg6332536)).
-From that point the copy users have is HKJ's, so a change to this driver is a request made
-in the thread and not an edit made to the file — which is why revision 1.1 stands here
-unchanged, including the request below.
+From that point the copy users have is HKJ's, so what they run changes in a release and not
+in this file. An edit here changes this copy and nothing else — which is the shape the rename
+below has.
 
-### A rename has been asked for and has not been made
+### The rename is made here and asked for upstream
 
-flash2b asks for `#name LBE-1420 GPS` to become `#name Leo Bodnar LBE-1420 GPS`, for
+flash2b asked for `#name LBE-1420 GPS` to become `#name Leo Bodnar LBE-1420 GPS`, for
 consistency with how the release notes and the device list name it
 ([reply #7278](https://www.eevblog.com/forum/testgear/program-that-can-log-from-many-multimeters/msg6339466/#msg6339466),
 21 August 2026).
 
-It is a reasonable request, and it is not free. `#name` is the key a saved setup uses to find
-its device, so anyone already logging this receiver has to reload the definition **and** edit
-`settingsLoad.txt` to match — a caveat flash2b raised himself in making the request. That
-cost is the reason the change has to go through a release rather than be applied to a local
-copy: a renamed local file silently stops matching the setups already on disk.
+Revision 1.2 makes that change in the shorter form, `Leo Bodnar LBE-1420`: the maker was the
+part missing, so the device now carries it the way the rest of TestController's device list
+does, and the trailing `GPS` adds nothing the model number does not. The shorter form is the
+one being asked for upstream, so it is the name a release would carry. No release carries it
+yet — V3.48 still ships `LBE-1420 GPS` — so the state is changed here, requested there, not
+released.
 
-Until it is made upstream, `#name` in this file is exactly what shipped.
+The request is reasonable and it is not free. `#name` is the key a saved setup uses to find
+its device, so anyone already logging this receiver has to reload the definition **and** edit
+`settingsLoad.txt` to match — a caveat flash2b raised himself in making the request. Making
+the change here does not avoid that cost, it just moves who pays it: this file silently stops
+matching the setups already on disk, which is why the rename still has to reach everyone
+through a release rather than one copy at a time.
+
+`#idString` is untouched at `$GN`, so this copy and the shipped one still collide. The
+differing `#name` does not let them coexist — only one of the two can be in the `Devices`
+folder.

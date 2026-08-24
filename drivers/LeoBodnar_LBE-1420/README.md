@@ -10,7 +10,7 @@ stream, parses it, and logs ten channels.
 | | |
 | --- | --- |
 | **Driver** | [`LeoBodnar_LBE-1420.txt`](LeoBodnar_LBE-1420.txt) |
-| **Revision** | 1.1 |
+| **Revision** | 1.2 |
 | **Interface** | Serial, 9600 8N1 |
 | **Instrument notes** | [`instrument-notes.md`](instrument-notes.md) |
 
@@ -24,20 +24,23 @@ LBE-1420 GPS (Thanks Cyclotron)"*
 ([reply #7197](https://www.eevblog.com/forum/testgear/program-that-can-log-from-many-multimeters/msg6332536/#msg6332536)).
 
 So on V3.48 or later you have it already, and the copy here is published for reference and
-for anyone on an earlier release. It is revision 1.1 — the revision that was submitted, and
-nothing has been asked for since.
+for anyone on an earlier release. It is revision 1.2, which differs from the shipped
+definition in one line: `#name` reads `Leo Bodnar LBE-1420` rather than `LBE-1420 GPS`,
+after a rename was asked for in the thread. That rename is not in any TestController release
+— V3.48 still ships the old name — so it is made here and requested upstream, no further
+than that. See [`instrument-notes.md`](instrument-notes.md).
 
 **What that does and does not tell you.** No TestController distribution was available to
-diff against, so this is the definition *as submitted* rather than a file checked byte for
-byte against the one in the release. Assume they are the same, and treat that as unchecked
-rather than confirmed.
+diff against, so below the header this is the definition *as submitted*, that one `#name`
+line aside, rather than a file checked byte for byte against the one in the release. Assume
+they are otherwise the same, and treat that as unchecked rather than confirmed.
 
-Either way the shipped copy is the one users have, so a change to it is a request to HKJ in
-the thread rather than an edit made here. One such request is open — see
-[`instrument-notes.md`](instrument-notes.md).
+Either way the shipped copy is the one users have, so changing what they run is a release
+HKJ makes and not an edit made here. The edit here changes this copy only; the request for
+the shipped one is open in the thread — see [`instrument-notes.md`](instrument-notes.md).
 
-Both files claim the same `#idString` and `#name`, and only one can win the match, so keep
-just one of the two in your `Devices` folder.
+Both files claim the same `#idString`, and only one can win the match — the differing `#name`
+does not let them coexist — so keep just one of the two in your `Devices` folder.
 
 ---
 
@@ -102,3 +105,7 @@ folder and restart, and remove the shipped `LeoBodnarLBE-1420.txt` if it is ther
 above. Then add the device on the serial port the receiver is on, at 9600 baud; it is
 identified from the sentences it is already streaming, so nothing has to be sent to it
 first.
+
+If you are replacing the shipped definition and already have setups logging this receiver,
+edit `settingsLoad.txt` as well: a saved setup finds its device by `#name`, and the name in
+this revision is not the one that shipped.

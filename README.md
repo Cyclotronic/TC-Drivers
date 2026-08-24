@@ -5,10 +5,10 @@ HKJ's program for logging and controlling bench instruments.
 
 Most drivers here were written against the instrument's programming manual and then
 **verified against the physical instrument** — every command exercised, and every
-per-range limit read back from the hardware rather than copied from a datasheet. Two
+per-range limit read back from the hardware rather than copied from a datasheet. Three
 were published from the definition already shipping with TestController, with no fresh
-capture taken. The table says which, and every driver's own header states exactly what
-stands behind it.
+capture taken, and one of those carries a rename that is not in a release yet. The table
+says which, and every driver's own header states exactly what stands behind it.
 
 Discussion and support for TestController itself is on the EEVblog thread
 [Program that can log/control many multimeters and other devices](https://www.eevblog.com/forum/testgear/program-that-can-log-from-many-multimeters/).
@@ -24,11 +24,13 @@ Discussion and support for TestController itself is on the EEVblog thread
 | [HP / Agilent E363xA](drivers/HP_Agilent_E363xA/) | HP E3632A, E3633A, E3634A DC power supply | GPIB / RS-232 | 1.8 | On hardware |
 | [Agilent 33250A](drivers/Agilent_33250A/) | Agilent / Keysight 33250A 80 MHz function / arbitrary waveform generator | GPIB / RS-232 | 1.0 | As shipped |
 | [Keithley 200X](drivers/Keithley_200X/) | Keithley 2001, 2001M, 2002 bench multimeter | GPIB | 1.0 | As shipped |
-| [Leo Bodnar LBE-1420](drivers/LeoBodnar_LBE-1420/) | Leo Bodnar LBE-1420 GPS/GNSS receiver, read-only NMEA | Serial | 1.1 | As shipped |
+| [Leo Bodnar LBE-1420](drivers/LeoBodnar_LBE-1420/) | Leo Bodnar LBE-1420 GPS/GNSS receiver, read-only NMEA | Serial | 1.2 | Shipped, renamed |
 
 **On hardware** — exercised against the instrument, limits read back from it.
 **As shipped** — this is the definition TestController itself ships, republished
 unchanged; no instrument was on hand to re-measure it for this release.
+**Shipped, renamed** — the definition TestController ships, with `#name` changed and
+nothing else; the rename is requested upstream and is not in a release yet.
 
 The Keithley 200X is co-authored and carries its own copyright line; see
 [`LICENSE`](LICENSE).
