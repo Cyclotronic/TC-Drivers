@@ -1,0 +1,1066 @@
+; Keithley 2001 / 2001M / 2002 Bench Multimeter - TestController driver
+;
+; Coverage   Keithley 2001, 2001M and 2002 - three device definitions built
+;            from one file, each with its own ranges and NPLC ceiling.
+;            DC volts, AC volts, DC current, AC current, 2-wire and 4-wire
+;            resistance, frequency and temperature, each on its own page with
+;            ranging, integration time and the digital averaging filter. AC
+;            adds detector and coupling, frequency a threshold source with the
+;            trigger level as a percentage of range, temperature thermocouple
+;            and RTD configuration. AutoZero and the display are global. One
+;            logged channel per function.
+;
+; Verified   Co-authored with KungFuJosh and functionally validated against a
+;            Keithley 2002 and a 2001M over GPIB before it was submitted
+;            upstream; firmware revisions were not recorded and the 2001 takes
+;            the 2001M's definition untested. No range or NPLC ceiling here
+;            was read back from the instrument - those are the published
+;            figures. HKJ took the file into TestController V3.41 (25 July
+;            2026) and this copy is byte-identical to the one that release
+;            installs, so it is deliberately unchanged and has not been
+;            re-verified against hardware for this publication.
+;            See instrument-notes.md beside this file.
+;
+; Revision   1.0
+; Date       2026-07-25
+; Author     KungFuJosh & Cyclotron
+; Copyright  (c) 2026 KungFuJosh and Cyclotron
+; License    MIT - see LICENSE
+;
+; TestController V3.41 and later already ships this definition as
+; "Keithley 200X.txt". Both files claim the same #idString values and only one
+; can win the match - keep one of the two in the Devices folder.
+;
+; Latest version: https://github.com/Cyclotronic/TC-Drivers
+; TestController by HKJ: https://lygte-info.dk/project/TestControllerIntro%20UK.html
+; Discussion: https://www.eevblog.com/forum/testgear/program-that-can-log-from-many-multimeters/
+
+; =============================================================================
+; 1. META DEFINITIONS
+; =============================================================================
+
+#metadef
+#idString KEITHLEY INSTRUMENTS INC.,MODEL 2002,
+#name Keithley 2002
+#handle K2002
+#port GPIB
+#replaceText NPLCrangeMax 50
+#replaceText SI8 SI9
+#replaceText 200kOhm4W 200000.000
+
+#metadef
+#idString KEITHLEY INSTRUMENTS INC.,MODEL 2001M,
+#name Keithley 2001M
+#handle K2001M
+#port GPIB
+#replaceText NPLCrangeMax 10
+#removeLine Internal INT
+#replaceText 200kOhm4W 210000.000
+#removeLine 2MOhm 2100000.000
+
+
+#metadef
+#idString KEITHLEY INSTRUMENTS INC.,MODEL 2001,
+#name Keithley 2001
+#handle K2001
+#port GPIB
+#replaceText NPLCrangeMax 10
+#removeLine Internal INT
+#replaceText 200kOhm4W 210000.000
+#removeLine 2MOhm 2100000.000
+
+#meta
+#author KungFuJosh & Cyclotron
+#idString KEITHLEY INSTRUMENTS INC.,MODEL 200X,
+#name Keithley 200X
+#handle K200X
+#driver SCPIx
+#port GPIB
+#helpurl https://www.youtube.com/watch?v=dQw4w9WgXcQ
+
+; =============================================================================
+; 2. COMMUNICATION & INITIALIZATION
+; =============================================================================
+
+#initCmd *CLS;*RST;:SYST:PRES;SAMP:COUN 1;:TRIG:SOURCE IMM;:TRIG:SEQ:COUNT 1;:UNIT:TEMP C;:SENS:TEMP:TC:TYPE K;:SENS:TEMP:TC:RJUN:RSEL SIM;:SENS:TEMP:TC:RJUN:SIM 23;:SYST:AZER:STAT 1;:VOLT:DC:NPLC 10;:CURR:DC:NPLC 10;:RES:NPLC 10;:FRES:NPLC 10;:TEMP:NPLC 10;VOLT:DC:AVER:STAT 0;setVars;
+#finalCmd *CLS;*RST;:SYST:PRES
+
+; Setup internal variables for frequency range tracking
+#scpiCmd setVars none
+:setvar: freqVoltRange = 1.0
+:setvar: freqCurrRange = 1.0
+
+; =============================================================================
+; 3. LOGGED VALUES & MODES
+; =============================================================================
+
+#value VoltageDC V SI8 DC_Voltage
+#value CurrentDC A SI DC_Current
+#value VoltageAC V SI8 AC_Voltage
+#value CurrentAC A SI AC_Current
+#value Resistance Ohm SI Two_Wire_Resistance,Four_Wire_Resistance
+#value Frequency Hz SI Frequency
+#value Period s D3 Period
+#value Temperature °C D3 Temperature
+
+#askValues FETC?
+#askValuesReadFormat UXX
+#readingDelay 5
+#modeChangeDelay 10
+#askMode FUNC?
+#interfaceType DMM BMM
+#interface readValue 0
+
+#cmdModeLayout 4 2
+#cmdMode DC_Voltage VOLT:DC *CLS;:FUNC "VOLT:DC";
+#cmdMode AC_Voltage VOLT:AC *CLS;:FUNC "VOLT:AC";
+#cmdMode Two_Wire_Resistance RES *CLS;:FUNC "RES";
+#cmdMode Four_Wire_Resistance FRES *CLS;:FUNC "FRES";
+#cmdMode DC_Current CURR *CLS;:FUNC "CURR:DC";
+#cmdMode AC_Current CURR:AC *CLS;:FUNC "CURR:AC";
+#cmdMode Frequency FREQ *CLS;:FUNC "FREQ";
+#cmdMode Temperature TEMP *CLS;:FUNC "TEMP";
+
+; =============================================================================
+; 4. ACTIVE MODE DISPLAY & Mode Selector
+; =============================================================================
+
+#cmdSetup info Active_Mode
+:read: FUNC?
+:readmath: getElement("DC Voltage;AC Voltage;DC Current;AC Current;Two Wire Resistance;Four Wire Resistance;Frequency;Temperature",listIndex(unQuote(value),"VOLT:DC VOLT:AC CURR:DC CURR:AC RES FRES FREQ TEMP"," "),";")
+:updatemodechange:
+:tip: Shows current operating mode of the instrument.
+
+
+#cmdSetup selector Mode_settings
+:read: FUNC?
+:readmath: unQuote(value)
+:updatemodechange:
+:tip: Active function selector mapping SCPI mode names to tab pages.
+VOLT:DC DC_Voltage.
+VOLT:AC AC_Voltage.
+CURR:DC DC_Current.
+CURR:AC AC_Current.
+RES Two_Wire_Resistance.
+FRES Four_Wire_Resistance.
+FREQ Frequency.
+TEMP Temperature.
+
+; =============================================================================
+; 5. DC VOLTAGE SETTINGS
+; =============================================================================
+
+#cmdSetup radio DC_Range_Auto DC_Voltage
+:read: VOLT:DC:RANG:AUTO?
+:write: VOLT:DC:RANG:AUTO #
+:update: DC_Range
+:updatedelayed: 0.5
+:updatemodechange:
+:tip: Enable or disable automatic DC Voltage range selection.
+Auto 1
+Manual 0
+
+#cmdSetup comboboxHot DC_Range DC_Voltage
+:read: VOLT:DC:RANG?
+:write: VOLT:DC:RANG (value)
+:update: DC_Range_Auto
+:updatedelayed: 0.5
+:updatemodechange:
+:tip: Manually select the DC voltage measurement range.
+200mV 0.200000
+2V 2.000000
+20V 20.000000
+200V 200.000000
+1000V 1100.000000
+
+#cmdSetup number NPLC DC_Voltage
+:read: VOLT:DC:NPLC?
+:write: VOLT:DC:NPLC #
+:updatemodechange:
+:tip: Integration time in Number of Power Line Cycles (0.01 to Max NPLC).
+_ 0.01 NPLCrangeMax
+
+#cmdSetup separator - DC_Voltage
+1 100 Sunken
+#cmdSetup separator - DC_Voltage
+:labelformat: bold (0,40,115)
+1 100 Empty
+center Filter_Settings
+#cmdSetup separator - DC_Voltage
+1 100 Sunken
+
+#cmdSetup buttonsOn Filter DC_Voltage
+:read: VOLT:DC:AVER:STAT?
+:write: VOLT:DC:AVER:STAT #
+:updatemodechange:
+:tip: Enable or disable digital averaging filter for DC Voltage.
+Off 0
+On 1
+
+#cmdSetup buttonsOn Auto_Average DC_Voltage
+:read: VOLT:DC:AVER:AUTO?
+:write: VOLT:DC:AVER:AUTO #
+:updatemodechange:
+:enable: DC_Voltage.Filter==1
+:tip: Auto filter selects filter settings automatically.
+Off 0
+On 1
+
+#cmdSetup numberInt Readings_Count DC_Voltage
+:read: VOLT:DC:AVER:COUN?
+:write: VOLT:DC:AVER:COUN #
+:updatemodechange:
+:enable: DC_Voltage.Filter==1 && DC_Voltage.Auto_Average==0
+:tip: Number of reading samples included in average (1 to 100).
+_ 1 100
+
+#cmdSetup comboboxHot Averaging_Mode DC_Voltage
+:read: VOLT:DC:AVER:TCONtrol?
+:write: VOLT:DC:AVER:TCONtrol (value)
+:updatemodechange:
+:enable: DC_Voltage.Filter==1 && DC_Voltage.Auto_Average==0
+:tip: Filter control type: Moving average or Repeat average.
+Moving MOV
+Repeat REP
+
+#cmdSetup buttonsOn Advanced_Average DC_Voltage
+:read: VOLT:DC:AVER:ADV:STAT?
+:write: VOLT:DC:AVER:ADV:STAT #
+:updatemodechange:
+:enable: DC_Voltage.Filter==1 && DC_Voltage.Auto_Average==0
+:tip: Advanced filter uses a noise-tolerance window instead of plain averaging.
+Off 0
+On 1
+
+#cmdSetup numberInt Average_Noise_Tolerance DC_Voltage
+:read: VOLT:DC:AVER:ADV:NTOL?
+:write: VOLT:DC:AVER:ADV:NTOL #
+:updatemodechange:
+:enable: DC_Voltage.Filter==1 && DC_Voltage.Auto_Average==0 && DC_Voltage.Advanced_Average==1
+:tip: Advanced filter noise-tolerance window (0 to 100 percent).
+_ 0 100
+
+; =============================================================================
+; 6. AC VOLTAGE SETTINGS
+; =============================================================================
+
+#cmdSetup radio AC_Range_Auto AC_Voltage
+:read: VOLT:AC:RANG:AUTO?
+:write: VOLT:AC:RANG:AUTO #
+:update: Range
+:updatedelayed: 0.5
+:updatemodechange:
+:tip: Enable or disable automatic AC Voltage range selection.
+Auto 1
+Manual 0
+
+#cmdSetup comboboxHot AC_Range AC_Voltage
+:read: VOLT:AC:RANG?
+:write: VOLT:AC:RANG (value)
+:update: AC_Range_Auto
+:updatedelayed: 0.5
+:updatemodechange:
+:tip: Manually select the AC voltage measurement range.
+200mV 0.200000
+2V 2.000000
+20V 20.000000
+200V 200.000000
+750V 775.000000
+
+#cmdSetup radio Coupling AC_Voltage
+:read: :SENS:VOLT:AC:COUP?
+:write: :SENS:VOLT:AC:COUP (value)
+:updatemodechange:
+:tip: Take measurement inclusive of DC offset, or filter out DC component.
+:string:
+AC AC
+DC DC
+
+#cmdSetup comboboxHot AC_Detector AC_Voltage
+:read: VOLT:AC:DET:FUNC?
+:write: VOLT:AC:DET:FUNC (value)
+:updatedelayed: 0.5
+:updatemodechange:
+:tip: Select AC voltage detection technique: RMS, Low-Frequency RMS, Average, or Peak.
+:string:
+RMS RMS
+Low_Freq_RMS LFRM
+Average AVER
+Peak PEAK
+
+#cmdSetup number NPLC AC_Voltage
+:read: VOLT:AC:NPLC?
+:write: VOLT:AC:NPLC #
+:updatemodechange:
+:tip: Integration time in Number of Power Line Cycles (0.01 to Max NPLC).
+_ 0.01 NPLCrangeMax
+
+#cmdSetup separator - AC_Voltage
+1 100 Sunken
+#cmdSetup separator - AC_Voltage
+:labelformat: bold (0,40,115)
+1 100 Empty
+center Filter_Settings
+#cmdSetup separator - AC_Voltage
+1 100 Sunken
+
+#cmdSetup buttonsOn Filter AC_Voltage
+:read: VOLT:AC:AVER:STAT?
+:write: VOLT:AC:AVER:STAT #
+:updatemodechange:
+:tip: Enable or disable digital averaging filter for AC Voltage.
+Off 0
+On 1
+
+#cmdSetup buttonsOn Auto_Average AC_Voltage
+:read: VOLT:AC:AVER:AUTO?
+:write: VOLT:AC:AVER:AUTO #
+:updatemodechange:
+:enable: AC_Voltage.Filter==1
+:tip: Auto filter selects filter settings automatically. Turn Off to control Count/Advanced manually.
+Off 0
+On 1
+
+#cmdSetup numberInt Readings_Count AC_Voltage
+:read: VOLT:AC:AVER:COUN?
+:write: VOLT:AC:AVER:COUN #
+:updatemodechange:
+:enable: AC_Voltage.Filter==1 && AC_Voltage.Auto_Average==0
+:tip: Reading count for AC filter buffer average calculation (1 to 100).
+_ 1 100
+
+#cmdSetup comboboxHot Averaging_Mode AC_Voltage
+:read: VOLT:AC:AVER:TCONtrol?
+:write: VOLT:AC:AVER:TCONtrol (value)
+:updatemodechange:
+:enable: AC_Voltage.Filter==1 && AC_Voltage.Auto_Average==0
+:tip: Filter control type: Moving average or Repeat average.
+Moving MOV
+Repeat REP
+
+#cmdSetup buttonsOn Advanced_Average AC_Voltage
+:read: VOLT:AC:AVER:ADV:STAT?
+:write: VOLT:AC:AVER:ADV:STAT #
+:updatemodechange:
+:enable: AC_Voltage.Filter==1 && AC_Voltage.Auto_Average==0
+:tip: Advanced filter uses a noise-tolerance window instead of plain averaging.
+Off 0
+On 1
+
+#cmdSetup numberInt Average_Noise_Tolerance AC_Voltage
+:read: VOLT:AC:AVER:ADV:NTOL?
+:write: VOLT:AC:AVER:ADV:NTOL #
+:updatemodechange:
+:enable: AC_Voltage.Filter==1 && AC_Voltage.Auto_Average==0 && AC_Voltage.Advanced_Average==1
+:tip: Advanced filter noise-tolerance window (0 to 100 percent of range).
+_ 0 100
+
+; =============================================================================
+; 7. DC CURRENT SETTINGS
+; =============================================================================
+
+#cmdSetup radio DC_Current_Range_Auto DC_Current
+:read: CURR:DC:RANG:AUTO?
+:write: CURR:DC:RANG:AUTO #
+:update: DC_Current_Range
+:updatedelayed: 0.5
+:updatemodechange:
+:tip: Enable or disable automatic DC Current range selection.
+Auto 1
+Manual 0
+
+#cmdSetup comboboxHot DC_Current_Range DC_Current
+:read: CURR:DC:RANG?
+:write: CURR:DC:RANG (value)
+:update: DC_Current_Range_Auto
+:updatedelayed: 0.5
+:updatemodechange:
+:tip: Manually select the DC current measurement range.
+200uA 0.0002
+2mA 0.0020
+20mA 0.0200
+200mA 0.2000
+2A 2.1000
+
+#cmdSetup number NPLC DC_Current
+:read: CURR:DC:NPLC?
+:write: CURR:DC:NPLC #
+:updatemodechange:
+:tip: Integration time in Number of Power Line Cycles (0.01 to Max NPLC).
+_ 0.01 NPLCrangeMax
+
+#cmdSetup separator - DC_Current
+1 100 Sunken
+#cmdSetup separator - DC_Current
+:labelformat: bold (0,40,115)
+1 100 Empty
+center Filter_Settings
+#cmdSetup separator - DC_Current
+1 100 Sunken
+
+#cmdSetup buttonsOn Filter DC_Current
+:read: CURR:DC:AVER:STAT?
+:write: CURR:DC:AVER:STAT #
+:updatemodechange:
+:tip: Enable or disable digital averaging filter for DC Current.
+Off 0
+On 1
+
+#cmdSetup buttonsOn Auto_Average DC_Current
+:read: CURR:DC:AVER:AUTO?
+:write: CURR:DC:AVER:AUTO #
+:updatemodechange:
+:enable: DC_Current.Filter==1
+:tip: Auto filter selects filter settings automatically. Turn Off to control Count/Advanced manually.
+Off 0
+On 1
+
+#cmdSetup numberInt Readings_Count DC_Current
+:read: CURR:DC:AVER:COUN?
+:write: CURR:DC:AVER:COUN #
+:updatemodechange:
+:enable: DC_Current.Filter==1 && DC_Current.Auto_Average==0
+:tip: Reading count for DC Current filter buffer average calculation (1 to 100).
+_ 1 100
+
+#cmdSetup comboboxHot Averaging_Mode DC_Current
+:read: CURR:DC:AVER:TCONtrol?
+:write: CURR:DC:AVER:TCONtrol (value)
+:updatemodechange:
+:enable: DC_Current.Filter==1 && DC_Current.Auto_Average==0
+:tip: Filter control type: Moving average or Repeat average.
+Moving MOV
+Repeat REP
+
+#cmdSetup buttonsOn Advanced_Average DC_Current
+:read: CURR:DC:AVER:ADV:STAT?
+:write: CURR:DC:AVER:ADV:STAT #
+:updatemodechange:
+:enable: DC_Current.Filter==1 && DC_Current.Auto_Average==0
+:tip: Advanced filter uses a noise-tolerance window instead of plain averaging.
+Off 0
+On 1
+
+#cmdSetup numberInt Average_Noise_Tolerance DC_Current
+:read: CURR:DC:AVER:ADV:NTOL?
+:write: CURR:DC:AVER:ADV:NTOL #
+:updatemodechange:
+:enable: DC_Current.Filter==1 && DC_Current.Auto_Average==0 && DC_Current.Advanced_Average==1
+:tip: Advanced filter noise-tolerance window (0 to 100 percent of range).
+_ 0 100
+
+; =============================================================================
+; 8. AC CURRENT SETTINGS
+; =============================================================================
+
+#cmdSetup radio AC_Current_Range_Auto AC_Current
+:read: CURR:AC:RANG:AUTO?
+:write: CURR:AC:RANG:AUTO #
+:update: AC_Current_Range
+:updatedelayed: 0.5
+:updatemodechange:
+:tip: Enable or disable automatic AC Current range selection.
+Auto 1
+Manual 0
+
+#cmdSetup comboboxHot AC_Current_Range AC_Current
+:read: CURR:AC:RANG?
+:write: CURR:AC:RANG (value)
+:update: AC_Current_Range_Auto
+:updatedelayed: 0.5
+:updatemodechange:
+:tip: Manually select the AC current measurement range.
+200uA 0.0002
+2mA 0.0020
+20mA 0.0200
+200mA 0.2000
+2A 2.1000
+
+#cmdSetup radio Coupling AC_Current
+:read: :SENS:CURR:AC:COUP?
+:write: :SENS:CURR:AC:COUP (value)
+:updatemodechange:
+:tip: Take measurement inclusive of DC offset, or filter out DC component.
+:string:
+AC AC
+DC DC
+
+#cmdSetup comboboxHot AC_Detector AC_Current
+:read: CURR:AC:DET:FUNC?
+:write: CURR:AC:DET:FUNC (value)
+:updatedelayed: 0.5
+:updatemodechange:
+:tip: AC current measurement type: RMS or Average.
+:string:
+RMS RMS
+Average AVER
+
+#cmdSetup number NPLC AC_Current
+:read: CURR:AC:NPLC?
+:write: CURR:AC:NPLC #
+:updatemodechange:
+:tip: Integration time in Number of Power Line Cycles (0.01 to Max NPLC).
+_ 0.01 NPLCrangeMax
+
+#cmdSetup separator - AC_Current
+1 100 Sunken
+#cmdSetup separator - AC_Current
+:labelformat: bold (0,40,115)
+1 100 Empty
+center Filter_Settings
+#cmdSetup separator - AC_Current
+1 100 Sunken
+
+#cmdSetup buttonsOn Filter AC_Current
+:read: CURR:AC:AVER:STAT?
+:write: CURR:AC:AVER:STAT #
+:updatemodechange:
+:tip: Enable or disable digital averaging filter for AC Current.
+Off 0
+On 1
+
+#cmdSetup buttonsOn Auto_Average AC_Current
+:read: CURR:AC:AVER:AUTO?
+:write: CURR:AC:AVER:AUTO #
+:updatemodechange:
+:enable: AC_Current.Filter==1
+:tip: Auto filter selects filter settings automatically. Turn Off to control Count/Advanced manually.
+Off 0
+On 1
+
+#cmdSetup numberInt Readings_Count AC_Current
+:read: CURR:AC:AVER:COUN?
+:write: CURR:AC:AVER:COUN #
+:updatemodechange:
+:enable: AC_Current.Filter==1 && AC_Current.Auto_Average==0
+:tip: Reading count for AC Current filter buffer average calculation (1 to 100).
+_ 1 100
+
+#cmdSetup comboboxHot Averaging_Mode AC_Current
+:read: CURR:AC:AVER:TCONtrol?
+:write: CURR:AC:AVER:TCONtrol (value)
+:updatemodechange:
+:enable: AC_Current.Filter==1 && AC_Current.Auto_Average==0
+:tip: Filter control type: Moving average or Repeat average.
+Moving MOV
+Repeat REP
+
+#cmdSetup buttonsOn Advanced_Average AC_Current
+:read: CURR:AC:AVER:ADV:STAT?
+:write: CURR:AC:AVER:ADV:STAT #
+:updatemodechange:
+:enable: AC_Current.Filter==1 && AC_Current.Auto_Average==0
+:tip: Advanced filter uses a noise-tolerance window instead of plain averaging.
+Off 0
+On 1
+
+#cmdSetup numberInt Average_Noise_Tolerance AC_Current
+:read: CURR:AC:AVER:ADV:NTOL?
+:write: CURR:AC:AVER:ADV:NTOL #
+:updatemodechange:
+:enable: AC_Current.Filter==1 && AC_Current.Auto_Average==0 && AC_Current.Advanced_Average==1
+:tip: Advanced filter noise-tolerance window (0 to 100 percent of range).
+_ 0 100
+
+; =============================================================================
+; 9. TWO-WIRE RESISTANCE SETTINGS
+; =============================================================================
+
+#cmdSetup radio Range_Auto Two_Wire_Resistance
+:read: RES:RANG:AUTO?
+:write: RES:RANG:AUTO #
+:update: Range
+:updatedelayed: 0.5
+:updatemodechange:
+:tip: Enable or disable automatic 2-Wire Resistance range selection.
+Auto 1
+Manual 0
+
+#cmdSetup comboboxHot Range Two_Wire_Resistance
+:read: RES:RANG?
+:write: RES:RANG (value)
+:update: Range_Auto
+:updatedelayed: 0.5
+:updatemodechange:
+:tip: Manually select the 2-Wire Resistance measurement range.
+20Ohm 20.0
+200Ohm 200.0
+2kOhm 2000.0
+20kOhm 20000.0
+200kOhm 200000.0
+2MOhm 2000000.0
+20MOhm 20000000.0
+200MOhm 200000000.0
+1GOhm 1050000000.0
+
+#cmdSetup number NPLC Two_Wire_Resistance
+:read: RES:NPLC?
+:write: RES:NPLC #
+:updatemodechange:
+:tip: Integration time in Number of Power Line Cycles (0.01 to Max NPLC).
+_ 0.01 NPLCrangeMax
+
+#cmdSetup separator - Two_Wire_Resistance
+1 100 Sunken
+#cmdSetup separator - Two_Wire_Resistance
+:labelformat: bold (0,40,115)
+1 100 Empty
+center Filter_Settings
+#cmdSetup separator - Two_Wire_Resistance
+1 100 Sunken
+
+#cmdSetup buttonsOn Filter Two_Wire_Resistance
+:read: RES:AVER:STAT?
+:write: RES:AVER:STAT #
+:updatemodechange:
+:tip: Enable or disable digital averaging filter for 2-Wire Resistance.
+Off 0
+On 1
+
+#cmdSetup buttonsOn Auto_Average Two_Wire_Resistance
+:read: RES:AVER:AUTO?
+:write: RES:AVER:AUTO #
+:updatemodechange:
+:enable: Two_Wire_Resistance.Filter==1
+:tip: Auto filter selects filter settings automatically. Turn Off to control Count/Advanced manually.
+Off 0
+On 1
+
+#cmdSetup numberInt Readings_Count Two_Wire_Resistance
+:read: RES:AVER:COUN?
+:write: RES:AVER:COUN #
+:updatemodechange:
+:enable: Two_Wire_Resistance.Auto_Average==0 && Two_Wire_Resistance.Filter==1
+:tip: Reading count for 2-Wire Resistance filter buffer average calculation (1 to 100).
+_ 1 100
+
+#cmdSetup comboboxHot Averaging_Mode Two_Wire_Resistance
+:read: RES:AVER:TCONtrol?
+:write: RES:AVER:TCONtrol (value)
+:updatemodechange:
+:enable: Two_Wire_Resistance.Auto_Average==0 && Two_Wire_Resistance.Filter==1
+:tip: Filter control type: Moving average or Repeat average.
+Moving MOV
+Repeat REP
+
+#cmdSetup buttonsOn Advanced_Average Two_Wire_Resistance
+:read: RES:AVER:ADV:STAT?
+:write: RES:AVER:ADV:STAT #
+:updatemodechange:
+:enable: Two_Wire_Resistance.Auto_Average==0 && Two_Wire_Resistance.Filter==1
+:tip: Advanced filter uses a noise-tolerance window instead of plain averaging.
+Off 0
+On 1
+
+#cmdSetup numberInt Average_Noise_Tolerance Two_Wire_Resistance
+:read: RES:AVER:ADV:NTOL?
+:write: RES:AVER:ADV:NTOL #
+:updatemodechange:
+:enable: Two_Wire_Resistance.Advanced_Average==1 && Two_Wire_Resistance.Auto_Average==0 && Two_Wire_Resistance.Filter==1
+:tip: Advanced filter noise-tolerance window (0 to 100 percent of range).
+_ 0 100
+
+; =============================================================================
+; 10. FOUR-WIRE RESISTANCE SETTINGS
+; =============================================================================
+
+#cmdSetup radio Range_Auto Four_Wire_Resistance
+:read: FRES:RANG:AUTO?
+:write: FRES:RANG:AUTO #
+:update: Range
+:updatedelayed: 0.5
+:updatemodechange:
+:tip: Enable or disable automatic 4-Wire Resistance range selection.
+Auto 1
+Manual 0
+
+#cmdSetup comboboxHot Range Four_Wire_Resistance
+:read: FRES:RANG?
+:write: FRES:RANG (value)
+:update: Range_Auto
+:updatedelayed: 0.5
+:updatemodechange:
+:tip: Manually select the 4-Wire Resistance measurement range.
+20Ohm 20.000
+200Ohm 200.000
+2kOhm 2000.000
+20kOhm 20000.000
+200kOhm 200kOhm4W
+2MOhm 2100000.000
+
+#cmdSetup number NPLC Four_Wire_Resistance
+:read: FRES:NPLC?
+:write: FRES:NPLC #
+:updatemodechange:
+:tip: Integration time in Number of Power Line Cycles (0.01 to Max NPLC).
+_ 0.01 NPLCrangeMax
+
+#cmdSetup separator - Four_Wire_Resistance
+1 100 Sunken
+#cmdSetup separator - Four_Wire_Resistance
+:labelformat: bold (0,40,115)
+1 100 Empty
+center Filter_Settings
+#cmdSetup separator - Four_Wire_Resistance
+1 100 Sunken
+
+#cmdSetup buttonsOn Filter Four_Wire_Resistance
+:read: FRES:AVER:STAT?
+:write: FRES:AVER:STAT #
+:updatemodechange:
+:tip: Enable or disable digital averaging filter for 4-Wire Resistance.
+Off 0
+On 1
+
+#cmdSetup buttonsOn Auto_Average Four_Wire_Resistance
+:read: FRES:AVER:AUTO?
+:write: FRES:AVER:AUTO #
+:updatemodechange:
+:enable: Four_Wire_Resistance.Filter==1
+:tip: Auto filter selects filter settings automatically. Turn Off to control Count/Advanced manually.
+Off 0
+On 1
+
+#cmdSetup numberInt Readings_Count Four_Wire_Resistance
+:read: FRES:AVER:COUN?
+:write: FRES:AVER:COUN #
+:updatemodechange:
+:enable: Four_Wire_Resistance.Auto_Average==0 && Four_Wire_Resistance.Filter==1
+:tip: Reading count for 4-Wire Resistance filter buffer average calculation (1 to 100).
+_ 1 100
+
+#cmdSetup comboboxHot Averaging_Mode Four_Wire_Resistance
+:read: FRES:AVER:TCONtrol?
+:write: FRES:AVER:TCONtrol (value)
+:updatemodechange:
+:enable: Four_Wire_Resistance.Auto_Average==0 && Four_Wire_Resistance.Filter==1
+:tip: Filter control type: Moving average or Repeat average.
+Moving MOV
+Repeat REP
+
+#cmdSetup buttonsOn Advanced_Average Four_Wire_Resistance
+:read: FRES:AVER:ADV:STAT?
+:write: FRES:AVER:ADV:STAT #
+:updatemodechange:
+:enable: Four_Wire_Resistance.Auto_Average==0 && Four_Wire_Resistance.Filter==1
+:tip: Advanced filter uses a noise-tolerance window instead of plain averaging.
+Off 0
+On 1
+
+#cmdSetup numberInt Average_Noise_Tolerance Four_Wire_Resistance
+:read: FRES:AVER:ADV:NTOL?
+:write: FRES:AVER:ADV:NTOL #
+:updatemodechange:
+:enable: Four_Wire_Resistance.Advanced_Average==1 && Four_Wire_Resistance.Auto_Average==0 && Four_Wire_Resistance.Filter==1
+:tip: Advanced filter noise-tolerance window (0 to 100 percent of range).
+_ 0 100
+
+; =============================================================================
+; 11. FREQUENCY & PERIOD SETTINGS
+; =============================================================================
+
+#cmdSetup radio Source Frequency
+:read: :SENS:FREQ:SOUR?
+:write: :SENS:FREQ:SOUR (value)
+:update: Frequency_Settings
+:updatedelayed: 0.5
+:updatemodechange:
+:tip: Select frequency measurement input signal source (Voltage or Current).
+:string:
+Current CURR
+Voltage VOLT
+
+#cmdSetup radio Coupling Frequency
+:read: :SENS:FREQ:COUP?
+:write: :SENS:FREQ:COUP (value)
+:updatedelayed: 0.5
+:updatemodechange:
+:tip: AC coupling filters DC bias; DC coupling includes DC component. Remember to set range inclusive of DC bias when in DC coupling.
+:string:
+AC AC
+DC DC
+
+
+; Shows/Hides sub-configuration pages based on the selected signal source
+; -----------------------------------------------------------------------------
+#cmdSetup selector Frequency_Settings Frequency
+:read: :SENS:FREQ:SOUR?
+:update: Source
+:updatedelayed: 0.2
+:updatemodechange:
+:tip: Active sub-configuration page for Frequency mode.
+CURR Frequency_CURR.Current_Range Frequency_CURR.Current_Level Frequency_CURR.Trigger_Current
+VOLT Frequency_VOLT.Voltage_Range Frequency_VOLT.Trigger_Level Frequency_VOLT.Trigger_Voltage
+
+#cmdSetup comboboxHot Voltage_Range Frequency_VOLT
+:read: :SENS:FREQ:THR:VOLT:RANG?
+:write: setFreqVoltRange
+:update: Trigger_Level Trigger_Voltage
+:updatemodechange:
+:tip: Select voltage signal threshold range for frequency trigger detection.
+1V 1.000000
+10V 10.000000
+100V 100.000000
+1000V 1000.000000
+
+; Command to set the range and update the internal tracking variable
+#scpiCmd setFreqVoltRange tx :SENS:FREQ:THR:VOLT:RANG (value)
+:setvar: freqVoltRange = double(inputValue)
+
+; Command to set trigger level based on range * percentage
+#scpiCmd setFreqVoltLevel tx :SENS:FREQ:THR:VOLT:LEV (value * (varExists("freqVoltRange") ? freqVoltRange : 1.0) / 100.0)
+
+
+#cmdSetup number Trigger_Level Frequency_VOLT
+:read: :SENS:FREQ:THR:VOLT:LEV?
+:readmath: (value / (varExists("freqVoltRange") ? freqVoltRange : 1.0)) * 100.0
+:write: setFreqVoltLevel
+:update: Trigger_Voltage
+:updatemodechange:
+:tip: Set frequency trigger level as a percentage of current range (-60% to +60%).
+:buttontext: Set
+Percent_of_Range -60 60
+
+#cmdSetup info Trigger_Voltage Frequency_VOLT
+:read: :SENS:FREQ:THR:VOLT:LEV?
+:updatemodechange:
+:tip: Calculated voltage threshold level in Volts.
+:format: SI
+Volts
+
+; Set the current threshold range and update the tracking variable
+#scpiCmd setFreqCurrRange tx :SENS:FREQ:THR:CURR:RANG (value)
+:setvar: freqCurrRange = double(inputValue)
+
+; Set current trigger level calculated as: (Percentage * Range) / 100
+#scpiCmd setFreqCurrLevel tx :SENS:FREQ:THR:CURR:LEV (value * (varExists("freqCurrRange") ? freqCurrRange : 1.0) / 100.0)
+
+
+#cmdSetup comboboxHot Current_Range Frequency_CURR
+:read: :SENS:FREQ:THR:CURR:RANG?
+:write: setFreqCurrRange
+:updatemodechange:
+:tip: Select current signal threshold range for frequency trigger detection.
+1mA 0.0010
+10mA 0.0100
+100mA 0.1000
+1A 1.0000
+
+#cmdSetup number Current_Level Frequency_CURR
+:read: :SENS:FREQ:THR:CURR:LEV?
+:readmath: (value / (varExists("freqCurrRange") ? freqCurrRange : 1.0)) * 100.0
+:write: setFreqCurrLevel
+:update: Trigger_Current
+:updatemodechange:
+:tip: Set frequency current trigger level as a percentage of current range (-60% to +60%).
+:buttontext: Set
+Percent_of_Range -60 60
+
+#cmdSetup info Trigger_Current Frequency_CURR
+:read: :SENS:FREQ:THR:CURR:LEV?
+:updatemodechange:
+:tip: Calculated current threshold level in Amperes.
+:format: SI
+AMPs
+
+; =============================================================================
+; 12. TEMPERATURE CONTROL & TRANSDUCERS
+; =============================================================================
+
+#cmdSetup radio Transducer_Type Temperature
+:read: :SENS:TEMP:TRAN?
+:write: :SENS:TEMP:TRAN (value)
+:update: Temperature_Settings
+:tip: Select sensor transducer type (Thermocouple, 2W RTD, 4W RTD, or Internal).
+:string:
+TCouple TC
+2W_RTD RTD
+4W_RTD FRTD
+Internal INT
+
+#cmdSetup radio Temperature_Unit Temperature
+:read: :UNIT:TEMP?
+:write: :UNIT:TEMP (value)
+:updatemodechange:
+:tip: Display temperature units in Celsius (°C), Fahrenheit (°F), or Kelvin (K).
+:string:
+Celsius C
+Fahrenheit F
+Kelvin K
+
+#cmdSetup number NPLCycles Temperature
+:read: :SENS:TEMP:NPLC?
+:write: :SENS:TEMP:NPLC #
+:updatemodechange:
+:tip: Integration time in Power Line Cycles (0.01 to Max NPLC).
+_ 0.01 NPLCrangeMax
+
+#cmdSetup buttonsOn AVG_Filter Temperature
+:read: :SENS:TEMP:AVER:STAT?
+:write: :SENS:TEMP:AVER:STAT #
+:updatemodechange:
+:tip: Enable or disable digital averaging filter for temperature readings.
+Off 0
+On 1
+
+#cmdSetup number AVG_Count Temperature
+:read: :SENS:TEMP:AVER:COUN?
+:write: :SENS:TEMP:AVER:COUN #
+:updatemodechange:
+:tip: Set temperature digital filter reading sample count (1 to 100).
+_ 1 100
+
+#cmdSetup comboboxHot AVG_Type Temperature
+:read: :SENS:TEMP:AVER:TCON?
+:write: :SENS:TEMP:AVER:TCON (value)
+:updatemodechange:
+:tip: Filter averaging control type: Moving average or Repeat average.
+Moving MOV
+Repeat REP
+
+; Shows/Hides sub-configuration pages based on selected transducer type
+; -----------------------------------------------------------------------------
+#cmdSetup selector Temperature_Settings Temperature
+:read: :SENS:TEMP:TRAN?
+:update: Transducer_Type
+:updatedelayed: 0.2
+:updatemodechange:
+:tip: Active transducer configuration panel.
+TC Temperature_TC.TC_Type Temperature_TC.TC_Ref_Junction Temperature_TC.TC_SIM_Ref_Temp Temperature_TC.TC_Real_Ref_Coeff Temperature_TC.TC_Real_Ref_Offset
+RTD Temperature_RTD.RTD_Type Temperature_RTD.RTD_R0 Temperature_RTD.RTD_Alpha Temperature_RTD.RTD_Beta Temperature_RTD.RTD_Delta
+FRTD Temperature_RTD.RTD_Type Temperature_RTD.RTD_R0 Temperature_RTD.RTD_Alpha Temperature_RTD.RTD_Beta Temperature_RTD.RTD_Delta
+
+; ---------- THERMOCOUPLE CONFIGURATION PAGE ---------------------------------
+
+#cmdSetup comboboxHot TC_Type Temperature_TC
+:read: :SENS:TEMP:TC:TYPE?
+:write: :SENS:TEMP:TC:TYPE #
+:updatemodechange:
+:tip: Select thermocouple sensor calibration curve type (J, K, T, E, R, S, B, N).
+J J
+K K
+T T
+E E
+R R
+S S
+B B
+N N
+
+#cmdSetup comboboxHot TC_Ref_Junction Temperature_TC
+:read: :SENS:TEMP:RJUN:RSEL?
+:write: :SENS:TEMP:RJUN:RSEL #
+:updatemodechange:
+:tip: Reference junction compensation type: Simulated or Real.
+Simulated SIM
+Real REAL
+
+#cmdSetup number TC_SIM_Ref_Temp Temperature_TC
+:read: :SENS:TEMP:RJUN:SIM?
+:write: :SENS:TEMP:RJUN:SIM #
+:updatemodechange:
+:enable: Temperature_TC.TC_Ref_Junction=="SIM"
+:tip: Simulated reference junction temperature (0 to 50 °C / 32 to 122 °F / 273 to 323 K).
+_ 0 323
+
+#cmdSetup number TC_Real_Ref_Coeff Temperature_TC
+:read: :SENS:TEMP:RJUN:REAL:TCO?
+:write: :SENS:TEMP:RJUN:REAL:TCO #
+:updatemodechange:
+:enable: Temperature_TC.TC_Ref_Junction=="REAL"
+:tip: Temperature coefficient for real reference junction (-0.09999 to +0.09999 V/°C).
+_ -0.09999 0.09999
+
+#cmdSetup number TC_Real_Ref_Offset Temperature_TC
+:read: :SENS:TEMP:RJUN:REAL:OFFS?
+:write: :SENS:TEMP:RJUN:REAL:OFFS #
+:updatemodechange:
+:enable: Temperature_TC.TC_Ref_Junction=="REAL"
+:tip: Voltage offset at 0°C for real reference junction (-0.09999 to +0.09999 V).
+_ -0.09999 0.09999
+
+; ---------- RTD / FRTD CONFIGURATION PAGE ------------------------------------
+
+#cmdSetup comboboxHot RTD_Type Temperature_RTD
+:read: :SENS:TEMP:RTD:TYPE?
+:write: :SENS:TEMP:RTD:TYPE #
+:updatemodechange:
+:tip: Select RTD sensor type (PT100, PT385, PT3916, D100, F100, USER, or SPRTD).
+PT100 PT100
+PT385 PT385
+PT3916 PT3916
+D100 D100
+F100 F100
+USER USER
+SPRTD SPRTD
+
+#cmdSetup number RTD_R0 Temperature_RTD
+:read: :SENS:TEMP:RTD:RZER?
+:write: :SENS:TEMP:RTD:RZER #
+:updatemodechange:
+:enable: Temperature_RTD.RTD_Type=="USER" || Temperature_RTD.RTD_Type=="SPRTD"
+:tip: Nominal 0°C resistance for USER/SPRTD RTD types (0 to 10000 Ω).
+_ 0 10000
+
+#cmdSetup number RTD_Alpha Temperature_RTD
+:read: :SENS:TEMP:RTD:ALPH?
+:write: :SENS:TEMP:RTD:ALPH #
+:updatemodechange:
+:enable: Temperature_RTD.RTD_Type=="USER" 
+:tip: Alpha temperature coefficient constant for USER type RTD (0 to 0.01).
+_ 0 0.01
+
+#cmdSetup number RTD_Beta Temperature_RTD
+:read: :SENS:TEMP:RTD:BETA?
+:write: :SENS:TEMP:RTD:BETA #
+:updatemodechange:
+:enable: Temperature_RTD.RTD_Type=="USER" 
+:tip: Beta constant for USER type RTD (0 to 1.00).
+_ 0 1.00
+
+#cmdSetup number RTD_Delta Temperature_RTD
+:read: :SENS:TEMP:RTD:DELT?
+:write: :SENS:TEMP:RTD:DELT #
+:updatemodechange:
+:enable: Temperature_RTD.RTD_Type=="USER" 
+:tip: Delta constant for USER type RTD (0 to 5.00).
+_ 0 5.00
+
+; =============================================================================
+; 13. GLOBAL SYSTEM CONTROLS
+; =============================================================================
+
+; ******** Common / Global UI Separators ********
+#cmdSetup separator -
+1 100 Sunken
+#cmdSetup separator -
+:labelformat: bold (0,40,115)
+1 100 Empty
+center Global_Settings
+#cmdSetup separator -
+1 100 Sunken
+
+#cmdSetup radio Auto_Zero
+:read: :SYST:AZER:STATe?
+:write: :INIT:CONT OFF;:ABOR;:SYST:AZER:STAT #;:INIT:CONT ON
+:updatedelayed: 1
+:updatemodechange:
+:tip: Enable or disable internal AutoZero reference measurements. Disabling increases speed but allows thermal drift.
+Off 0
+On 1
+
+#cmdSetup comboboxHot AutoZero_Type
+:read: :SYST:AZER:TYPE?
+:write: :SYST:AZER:TYPE #
+:updatedelayed: 0.5
+:updatemodechange:
+:tip: Normal = autozero about every 200 ms; Synchronous = autozero on every reading (slower, lowest drift).
+Normal NORM
+Synchronous SYNC
+
+#cmdSetup buttonsOn Display
+:read: DISP:ENAB?
+:write: DISP:ENAB (value)
+:updatedelayed: 0.2
+:tip: Turn instrument front-panel VFD display output On or Off (disabling speeds up bus operation).
+Off 0
+On 1

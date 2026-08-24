@@ -23,11 +23,15 @@ Discussion and support for TestController itself is on the EEVblog thread
 | [HP / Agilent E3631A](drivers/HP_Agilent_E3631A/) | HP E3631A triple-output DC power supply, +6 V / +25 V / -25 V | GPIB / RS-232 | 1.2 | On hardware |
 | [HP / Agilent E363xA](drivers/HP_Agilent_E363xA/) | HP E3632A, E3633A, E3634A DC power supply | GPIB / RS-232 | 1.8 | On hardware |
 | [Agilent 33250A](drivers/Agilent_33250A/) | Agilent / Keysight 33250A 80 MHz function / arbitrary waveform generator | GPIB / RS-232 | 1.0 | As shipped |
+| [Keithley 200X](drivers/Keithley_200X/) | Keithley 2001, 2001M, 2002 bench multimeter | GPIB | 1.0 | As shipped |
 | [Leo Bodnar LBE-1420](drivers/LeoBodnar_LBE-1420/) | Leo Bodnar LBE-1420 GPS/GNSS receiver, read-only NMEA | Serial | 1.1 | As shipped |
 
 **On hardware** — exercised against the instrument, limits read back from it.
 **As shipped** — this is the definition TestController itself ships, republished
 unchanged; no instrument was on hand to re-measure it for this release.
+
+The Keithley 200X is co-authored and carries its own copyright line; see
+[`LICENSE`](LICENSE).
 
 Each driver has its own folder containing the driver file, notes on instrument
 behaviour worth knowing before you use it, and — where the instrument was on hand —
