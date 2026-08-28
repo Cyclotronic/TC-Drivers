@@ -1,0 +1,787 @@
+; HP / Agilent / Keysight E364xA DC Power Supplies - TestController driver
+;
+; Coverage   E3640A, E3641A, E3642A, E3643A, E3644A and E3645A - the
+;            single-output, dual-range models (30 W, 50 W and 80 W tiers).
+;            Both output ranges, voltage and current setpoints with a fine
+;            adjust page, overvoltage protection with a trip indicator, bus
+;            and immediate triggering, front-panel display text, five stored
+;            states, and a regulation readout logged as CC or CV. Five
+;            settings pages sit behind a Settings View selector; the output,
+;            the range and the two setpoints stay visible above it.
+;            There is no overcurrent protection - the E364xA has no CURR:PROT.
+;
+; Verified   Against an E3641A (firmware 1.8-5.0-1.0) over GPIB, page by page,
+;            with the output run into an electronic load for the CV/CC pass.
+;            The ceilings and the finest step were read back from the
+;            instrument rather than taken from the data sheet: LOW 36.05 V /
+;            0.824 A, HIGH 61.80 V / 0.515 A, OVP 1-66 V, finest step
+;            0.001127 V / 0.000014 A. On the LOW range the instrument accepts
+;            a setpoint above the range ceiling without complaint; the P60V
+;            ceiling is enforced. The other five models carry manual-derived
+;            range and step figures and still need hardware confirmation.
+;            See instrument-notes.md beside this file.
+;
+; Revision   1.2
+; Date       2026-08-28
+; Author     Cyclotron
+; License    MIT - see LICENSE
+;
+; Latest version: https://github.com/Cyclotronic/TC-Drivers
+; TestController by HKJ: https://lygte-info.dk/project/TestControllerIntro%20UK.html
+; Discussion: https://www.eevblog.com/forum/testgear/program-that-can-log-from-many-multimeters/
+
+; --- E3640A (30W: 8V/3A or 20V/1.5A) ---
+#metadef
+#idString Agilent Technologies,E3640A,
+#name Agilent E3640A
+#handle AgilentE3640A
+#replaceText LowRangeName 8V_3A
+#replaceText HighRangeName 20V_1.5A
+#replaceText LowVoltageMax 8.24
+#replaceText LowCurrentMax 3.09
+#replaceText HighVoltageMax 20.60
+#replaceText HighCurrentMax 1.545
+#replaceText OVPMax 22
+#replaceText VoltageStepMin 0.00035
+#replaceText CurrentStepMin 0.000052
+
+#metadef
+#idString HEWLETT-PACKARD,E3640A,
+#name HP E3640A
+#handle HPE3640A
+#replaceText LowRangeName 8V_3A
+#replaceText HighRangeName 20V_1.5A
+#replaceText LowVoltageMax 8.24
+#replaceText LowCurrentMax 3.09
+#replaceText HighVoltageMax 20.60
+#replaceText HighCurrentMax 1.545
+#replaceText OVPMax 22
+#replaceText VoltageStepMin 0.00035
+#replaceText CurrentStepMin 0.000052
+
+#metadef
+#idString Keysight Technologies,E3640A,
+#name Keysight E3640A
+#handle KeysightE3640A
+#replaceText LowRangeName 8V_3A
+#replaceText HighRangeName 20V_1.5A
+#replaceText LowVoltageMax 8.24
+#replaceText LowCurrentMax 3.09
+#replaceText HighVoltageMax 20.60
+#replaceText HighCurrentMax 1.545
+#replaceText OVPMax 22
+#replaceText VoltageStepMin 0.00035
+#replaceText CurrentStepMin 0.000052
+
+
+; --- E3641A (30W: 35V/0.8A or 60V/0.5A) ---
+#metadef
+#idString Agilent Technologies,E3641A,
+#name Agilent E3641A
+#handle AgilentE3641A
+#replaceText LowRangeName 35V_0.8A
+#replaceText HighRangeName 60V_0.5A
+#replaceText LowVoltageMax 36.05
+#replaceText LowCurrentMax 0.824
+#replaceText HighVoltageMax 61.80
+#replaceText HighCurrentMax 0.515
+#replaceText OVPMax 66
+#replaceText VoltageStepMin 0.001127
+#replaceText CurrentStepMin 0.000014
+
+#metadef
+#idString HEWLETT-PACKARD,E3641A,
+#name HP E3641A
+#handle HPE3641A
+#replaceText LowRangeName 35V_0.8A
+#replaceText HighRangeName 60V_0.5A
+#replaceText LowVoltageMax 36.05
+#replaceText LowCurrentMax 0.824
+#replaceText HighVoltageMax 61.80
+#replaceText HighCurrentMax 0.515
+#replaceText OVPMax 66
+#replaceText VoltageStepMin 0.001127
+#replaceText CurrentStepMin 0.000014
+
+#metadef
+#idString Keysight Technologies,E3641A,
+#name Keysight E3641A
+#handle KeysightE3641A
+#replaceText LowRangeName 35V_0.8A
+#replaceText HighRangeName 60V_0.5A
+#replaceText LowVoltageMax 36.05
+#replaceText LowCurrentMax 0.824
+#replaceText HighVoltageMax 61.80
+#replaceText HighCurrentMax 0.515
+#replaceText OVPMax 66
+#replaceText VoltageStepMin 0.001127
+#replaceText CurrentStepMin 0.000014
+
+
+; --- E3642A (50W: 8V/5A or 20V/2.5A) ---
+#metadef
+#idString Agilent Technologies,E3642A,
+#name Agilent E3642A
+#handle AgilentE3642A
+#replaceText LowRangeName 8V_5A
+#replaceText HighRangeName 20V_2.5A
+#replaceText LowVoltageMax 8.24
+#replaceText LowCurrentMax 5.15
+#replaceText HighVoltageMax 20.60
+#replaceText HighCurrentMax 2.575
+#replaceText OVPMax 22
+#replaceText VoltageStepMin 0.00038
+#replaceText CurrentStepMin 0.000095
+
+#metadef
+#idString HEWLETT-PACKARD,E3642A,
+#name HP E3642A
+#handle HPE3642A
+#replaceText LowRangeName 8V_5A
+#replaceText HighRangeName 20V_2.5A
+#replaceText LowVoltageMax 8.24
+#replaceText LowCurrentMax 5.15
+#replaceText HighVoltageMax 20.60
+#replaceText HighCurrentMax 2.575
+#replaceText OVPMax 22
+#replaceText VoltageStepMin 0.00038
+#replaceText CurrentStepMin 0.000095
+
+#metadef
+#idString Keysight Technologies,E3642A,
+#name Keysight E3642A
+#handle KeysightE3642A
+#replaceText LowRangeName 8V_5A
+#replaceText HighRangeName 20V_2.5A
+#replaceText LowVoltageMax 8.24
+#replaceText LowCurrentMax 5.15
+#replaceText HighVoltageMax 20.60
+#replaceText HighCurrentMax 2.575
+#replaceText OVPMax 22
+#replaceText VoltageStepMin 0.00038
+#replaceText CurrentStepMin 0.000095
+
+
+; --- E3643A (50W: 35V/1.4A or 60V/0.8A) ---
+#metadef
+#idString Agilent Technologies,E3643A,
+#name Agilent E3643A
+#handle AgilentE3643A
+#replaceText LowRangeName 35V_1.4A
+#replaceText HighRangeName 60V_0.8A
+#replaceText LowVoltageMax 36.05
+#replaceText LowCurrentMax 1.442
+#replaceText HighVoltageMax 61.80
+#replaceText HighCurrentMax 0.824
+#replaceText OVPMax 66
+#replaceText VoltageStepMin 0.00114
+#replaceText CurrentStepMin 0.000026
+
+#metadef
+#idString HEWLETT-PACKARD,E3643A,
+#name HP E3643A
+#handle HPE3643A
+#replaceText LowRangeName 35V_1.4A
+#replaceText HighRangeName 60V_0.8A
+#replaceText LowVoltageMax 36.05
+#replaceText LowCurrentMax 1.442
+#replaceText HighVoltageMax 61.80
+#replaceText HighCurrentMax 0.824
+#replaceText OVPMax 66
+#replaceText VoltageStepMin 0.00114
+#replaceText CurrentStepMin 0.000026
+
+#metadef
+#idString Keysight Technologies,E3643A,
+#name Keysight E3643A
+#handle KeysightE3643A
+#replaceText LowRangeName 35V_1.4A
+#replaceText HighRangeName 60V_0.8A
+#replaceText LowVoltageMax 36.05
+#replaceText LowCurrentMax 1.442
+#replaceText HighVoltageMax 61.80
+#replaceText HighCurrentMax 0.824
+#replaceText OVPMax 66
+#replaceText VoltageStepMin 0.00114
+#replaceText CurrentStepMin 0.000026
+
+
+; --- E3644A (80W: 8V/8A or 20V/4A) ---
+#metadef
+#idString Agilent Technologies,E3644A,
+#name Agilent E3644A
+#handle AgilentE3644A
+#replaceText LowRangeName 8V_8A
+#replaceText HighRangeName 20V_4A
+#replaceText LowVoltageMax 8.24
+#replaceText LowCurrentMax 8.24
+#replaceText HighVoltageMax 20.60
+#replaceText HighCurrentMax 4.12
+#replaceText OVPMax 22
+#replaceText VoltageStepMin 0.00035
+#replaceText CurrentStepMin 0.000152
+
+#metadef
+#idString HEWLETT-PACKARD,E3644A,
+#name HP E3644A
+#handle HPE3644A
+#replaceText LowRangeName 8V_8A
+#replaceText HighRangeName 20V_4A
+#replaceText LowVoltageMax 8.24
+#replaceText LowCurrentMax 8.24
+#replaceText HighVoltageMax 20.60
+#replaceText HighCurrentMax 4.12
+#replaceText OVPMax 22
+#replaceText VoltageStepMin 0.00035
+#replaceText CurrentStepMin 0.000152
+
+#metadef
+#idString Keysight Technologies,E3644A,
+#name Keysight E3644A
+#handle KeysightE3644A
+#replaceText LowRangeName 8V_8A
+#replaceText HighRangeName 20V_4A
+#replaceText LowVoltageMax 8.24
+#replaceText LowCurrentMax 8.24
+#replaceText HighVoltageMax 20.60
+#replaceText HighCurrentMax 4.12
+#replaceText OVPMax 22
+#replaceText VoltageStepMin 0.00035
+#replaceText CurrentStepMin 0.000152
+
+
+; --- E3645A (80W: 35V/2.2A or 60V/1.3A) ---
+#metadef
+#idString Agilent Technologies,E3645A,
+#name Agilent E3645A
+#handle AgilentE3645A
+#replaceText LowRangeName 35V_2.2A
+#replaceText HighRangeName 60V_1.3A
+#replaceText LowVoltageMax 36.05
+#replaceText LowCurrentMax 2.266
+#replaceText HighVoltageMax 61.80
+#replaceText HighCurrentMax 1.339
+#replaceText OVPMax 66
+#replaceText VoltageStepMin 0.00114
+#replaceText CurrentStepMin 0.000042
+
+#metadef
+#idString HEWLETT-PACKARD,E3645A,
+#name HP E3645A
+#handle HPE3645A
+#replaceText LowRangeName 35V_2.2A
+#replaceText HighRangeName 60V_1.3A
+#replaceText LowVoltageMax 36.05
+#replaceText LowCurrentMax 2.266
+#replaceText HighVoltageMax 61.80
+#replaceText HighCurrentMax 1.339
+#replaceText OVPMax 66
+#replaceText VoltageStepMin 0.00114
+#replaceText CurrentStepMin 0.000042
+
+#metadef
+#idString Keysight Technologies,E3645A,
+#name Keysight E3645A
+#handle KeysightE3645A
+#replaceText LowRangeName 35V_2.2A
+#replaceText HighRangeName 60V_1.3A
+#replaceText LowVoltageMax 36.05
+#replaceText LowCurrentMax 2.266
+#replaceText HighVoltageMax 61.80
+#replaceText HighCurrentMax 1.339
+#replaceText OVPMax 66
+#replaceText VoltageStepMin 0.00114
+#replaceText CurrentStepMin 0.000042
+
+
+; Default meta block (E3641A fallback)
+#meta
+#idString Agilent Technologies,E3641A,
+#name Agilent E364xA
+#handle AgilentE364xA
+
+#replaceText LowRangeName 35V_0.8A
+#replaceText HighRangeName 60V_0.5A
+#replaceText LowVoltageMax 36.05
+#replaceText LowCurrentMax 0.824
+#replaceText HighVoltageMax 61.80
+#replaceText HighCurrentMax 0.515
+#replaceText OVPMax 66
+#replaceText VoltageStepMin 0.001127
+#replaceText CurrentStepMin 0.000014
+
+#author Cyclotron
+#notes Single-output dual-range E3640A-E3645A DC supplies (30W, 50W, 80W). Selector for Basic_Setup, Fine Adjust, Protection, Trigger and Utility; setpoint ceilings follow selected range.
+
+#driver SCPIx
+#port comfixedbaud GPIB
+#baudrate 9600N82RD
+#eol \n
+
+#gpibReadEol eoi
+
+#interfaceType PS Readout
+
+; Logging queries & value channels
+#askValues [mode:Log_All,Log_V_and_I_only]MEAS:VOLT?;[20];MEAS:CURR?;[20];[mode:Log_All]VOLT?;[20];CURR?;[20];STAT:QUES:COND?;[20];[mode:]
+#value Voltage V D4 Log_All,Log_V_and_I_only
+#value Current A D4 Log_All,Log_V_and_I_only
+#value VoltageSet V D4 Log_All
+#value CurrentSet A D4 Log_All
+#value Regulation - DIGITAL(CC,CV) Log_All
+#readingDelay 2
+#modeChangeDelay 0.5
+#askMode LogModeGet?
+#cmdModeLayout 1 2
+
+; SCPI View & Serial/GPIB management
+#scpiCmd setView none
+:setvar: viewState=inputValue
+
+#scpiCmd getView? none?
+:readmath: viewState
+
+#scpiCmd InitView none
+:setvar: viewState="Basic_Setup"
+
+#scpiCmd SerialInit #pgm#
+if (portType!="GPIB")
+  deviceWrite(handle,"SYST:REM");
+endif;
+
+#scpiCmd SerialExit #pgm#
+if (portType!="GPIB")
+  deviceWrite(handle,"SYST:LOC");
+endif;
+
+#scpiCmd GpibExit
+[LOC]
+
+#scpiCmd SetDisplayText tx DISP:TEXT "(value)"
+
+#scpiCmd SetModeAll none
+:setvar: logMode="ALL"
+
+#scpiCmd SetModeVI none
+:setvar: logMode="VI"
+
+#scpiCmd LogModeGet? none?
+:readmath: logMode
+
+#cmdMode Log_All ALL
+SetModeAll
+
+#cmdMode Log_V_and_I_only VI
+SetModeVI
+
+#initCmd SetModeAll;SerialInit;InitView;
+#finalCmd OUTP OFF;[*OPC];SerialExit;GpibExit
+#outputOff OUTP OFF
+
+; Power Supply Interface
+#interface setVoltage VOLT (value)
+#interface setCurrent CURR (value)
+#interface setOn OUTP (value)
+#interface getVoltage VOLT?
+#interface getCurrent CURR?
+#interface getOn OUTP?
+#interface readVoltage 0
+#interface readCurrent 1
+#interface setReadoutString DISP:TEXT ("\""+value+"\"")
+
+; ==============================================================================
+; Controls & Layout (#cmdSetup)
+; ==============================================================================
+
+#cmdSetup toggleButton Output
+:read: [20];OUTP?
+:write: OUTP (value)
+:updatedelayed: 0.2
+:updatealloff:
+:color: gray green
+:tip: Enable or disable the DC output.
+OUTPUT_OFF 0
+OUTPUT_ON 1
+
+#cmdSetup radio Output_Range
+:read: [20];VOLT:RANG?
+:readmath: replaceRX(replaceRX(trim(unQuote(value)),"P(8|15|25|35)V","LOW"),"P(20|30|50|60)V","HIGH")
+:write: OUTP OFF;[*OPC];VOLT:RANG (value);[*OPC]
+:string:
+:updatedelayed: 0.3
+:update: Output Voltage Current Pending_Voltage Pending_Current
+:tip: Selects the output range. Ceilings follow this setting. Changing range switches output off first.
+LowRangeName LOW
+HighRangeName HIGH
+
+#cmdSetup separator -
+1 100 Sunken
+
+#cmdSetup separator -
+:labelformat: bold (80,80,80)
+1 100 Empty
+center Setpoints
+
+#cmdSetup separator -
+1 100 Sunken
+
+#cmdSetup advNumber Voltage
+:read: [20];VOLT?
+:write: VOLT
+:updatedelayed: 0.2
+:format: D4
+:buttontext: Set
+:tip: Output voltage setpoint.
+V 0 inList(Output_Range,"LOW,0")?LowVoltageMax:HighVoltageMax
+
+#cmdSetup advNumber Current
+:read: [20];CURR?
+:write: CURR
+:updatedelayed: 0.2
+:format: D4
+:buttontext: Set
+:tip: Output current limit.
+A 0 inList(Output_Range,"LOW,0")?LowCurrentMax:HighCurrentMax
+
+#cmdSetup separator -
+1 100 Sunken
+
+#cmdSetup separator -
+:labelformat: bold (80,80,80)
+1 100 Empty
+center Status
+
+#cmdSetup separator -
+1 100 Sunken
+
+#cmdSetup indicator Temperature
+:read: [20];STAT:QUES:COND?
+:tip: Overtemperature status bit from Questionable Status Register.
+Normal (int(value)&16)==0 green
+Overtemperature (int(value)&16)!=0 red
+
+#cmdSetup separator -
+1 100 Sunken
+
+#cmdSetup separator -
+:labelformat: bold (80,80,80)
+1 100 Empty
+center Settings View
+
+#cmdSetup separator -
+1 100 Sunken
+
+#cmdSetup comboboxHot Settings_View
+:read: getView?
+:write: setView
+:string:
+:tip: Select settings panel to display
+Basic_Setup BasicSetup
+Fine_Adjust FineAdjust
+Protection Protection
+Trigger Trigger
+Utility Utility
+
+#cmdSetup selector Settings_View_Selector
+Settings_View
+BasicSetup BasicSetup.
+FineAdjust FineAdjust.
+Protection Protection.
+Trigger Trigger.
+Utility Utility.
+
+#cmdSetup separator -
+1 100 Sunken
+
+#cmdSetup separator - BasicSetup
+1 100 Sunken
+
+#cmdSetup separator - BasicSetup
+:labelformat: bold (80,80,80)
+1 100 Empty
+center Memory
+
+#cmdSetup separator - BasicSetup
+1 100 Sunken
+
+#cmdSetup buttons Save_State BasicSetup
+:write: *SAV #;[*OPC]
+:tip: Store instrument state in non-volatile memory (1-5).
+Slot_1 1
+Slot_2 2
+Slot_3 3
+Slot_4 4
+Slot_5 5
+
+#cmdSetup buttons Recall_State BasicSetup
+:write: *RCL #;[*OPC]
+:updatedelayed: 0.3
+:update: Output Voltage Current Pending_Voltage Pending_Current
+:tip: Recall a stored instrument state (1-5).
+Slot_1 1
+Slot_2 2
+Slot_3 3
+Slot_4 4
+Slot_5 5
+
+#cmdSetup separator - BasicSetup
+6 100 Empty
+
+#cmdSetup separator - BasicSetup
+1 100 Sunken
+
+#cmdSetup separator - BasicSetup
+:labelformat: bold (80,80,80)
+1 100 Empty
+center Front Panel & Relay
+
+#cmdSetup separator - BasicSetup
+1 100 Sunken
+
+#cmdSetup buttonsOn Display BasicSetup
+:read: [20];DISP?
+:write: DISP
+:updatedelayed: 0.2
+:tip: Turn front-panel display on or off.
+Off 0
+On 1
+
+#cmdSetup text Display_Message BasicSetup
+:read: [20];DISP:TEXT?
+:readmath: unQuote(value)
+:write: SetDisplayText
+:tip: Show up to 12 characters on the front panel display.
+12
+
+#cmdSetup button Clear_Display_Message BasicSetup
+:write: DISP:TEXT "";DISP:TEXT:CLE
+:updatedelayed: 0.2
+:update: Display_Message
+:tip: Clear front-panel display message.
+
+#cmdSetup buttonsOn External_Relay BasicSetup
+:read: [20];OUTP:REL?
+:write: OUTP:REL
+:updatedelayed: 0.2
+:tip: Control optional TTL output signal on RS-232 pins 1 and 9 for driving an external disconnect or polarity relay.
+Off 0
+On 1
+
+#cmdSetup separator - FineAdjust
+1 100 Sunken
+
+#cmdSetup separator - FineAdjust
+:labelformat: bold (80,80,80)
+1 100 Empty
+center Voltage
+
+#cmdSetup separator - FineAdjust
+1 100 Sunken
+
+#cmdSetup number Voltage_Increment FineAdjust
+:read: [20];VOLT:STEP?
+:write: VOLT:STEP
+:format: D6
+:buttontext: Set
+:tip: Voltage Down/Up step increment.
+V VoltageStepMin HighVoltageMax
+
+#cmdSetup button Smallest_Voltage_Increment FineAdjust
+:write: VOLT:STEP DEF
+:updatedelayed: 0.2
+:update: Voltage_Increment
+:tip: Set voltage increment to default/finest resolution.
+
+#cmdSetup buttons Voltage_Adjust FineAdjust
+:write: VOLT
+:updatedelayed: 0.2
+:update: Voltage
+:tip: Adjust voltage down or up by one increment step.
+Down DOWN
+Up UP
+
+#cmdSetup separator - FineAdjust
+6 100 Empty
+
+#cmdSetup separator - FineAdjust
+1 100 Sunken
+
+#cmdSetup separator - FineAdjust
+:labelformat: bold (80,80,80)
+1 100 Empty
+center Current
+
+#cmdSetup separator - FineAdjust
+1 100 Sunken
+
+#cmdSetup number Current_Increment FineAdjust
+:read: [20];CURR:STEP?
+:write: CURR:STEP
+:format: D6
+:buttontext: Set
+:tip: Current Down/Up step increment.
+A CurrentStepMin HighCurrentMax
+
+#cmdSetup button Smallest_Current_Increment FineAdjust
+:write: CURR:STEP DEF
+:updatedelayed: 0.2
+:update: Current_Increment
+:tip: Set current increment to default/finest resolution.
+
+#cmdSetup buttons Current_Adjust FineAdjust
+:write: CURR
+:updatedelayed: 0.2
+:update: Current
+:tip: Adjust current limit down or up by one increment step.
+Down DOWN
+Up UP
+
+#cmdSetup separator - Protection
+1 100 Sunken
+
+#cmdSetup separator - Protection
+:labelformat: bold (80,80,80)
+1 100 Empty
+center Overvoltage
+
+#cmdSetup separator - Protection
+1 100 Sunken
+
+#cmdSetup number OVP_Limit Protection
+:read: [20];VOLT:PROT?
+:write: VOLT:PROT
+:updatedelayed: 0.2
+:update: OVP_Tripped
+:format: D3
+:buttontext: Set
+:tip: Overvoltage protection limit.
+V 1 OVPMax
+
+#cmdSetup buttonsOn OVP_Enable Protection
+:read: [20];VOLT:PROT:STAT?
+:write: VOLT:PROT:STAT
+:updatedelayed: 0.2
+:update: OVP_Tripped
+:tip: Enable or disable overvoltage protection.
+Off 0
+On 1
+
+#cmdSetup indicator OVP_Tripped Protection
+:read: [20];VOLT:PROT:TRIP?
+:tip: Lights when overvoltage protection has tripped.
+Clear int(value)==0 green
+Tripped int(value)==1 red
+
+#cmdSetup button Clear_OVP_Trip Protection
+:write: VOLT:PROT:CLE;[*OPC]
+:updatedelayed: 0.2
+:update: OVP_Tripped Output
+:tip: Clear an overvoltage protection trip condition.
+
+#cmdSetup separator - Trigger
+1 100 Sunken
+
+#cmdSetup separator - Trigger
+:labelformat: bold (80,80,80)
+1 100 Empty
+center Source
+
+#cmdSetup separator - Trigger
+1 100 Sunken
+
+#cmdSetup radio Trigger_Source Trigger
+:read: [20];TRIG:SOUR?
+:write: TRIG:SOUR
+:string:
+:updatedelayed: 0.2
+:tip: Select trigger source (Bus or Immediate).
+Bus BUS
+Immediate IMM
+
+#cmdSetup number Trigger_Delay Trigger
+:read: [20];TRIG:DEL?
+:write: TRIG:DEL
+:format: D3
+:buttontext: Set
+:tip: Trigger delay in seconds.
+s 0 3600
+
+#cmdSetup separator - Trigger
+6 100 Empty
+
+#cmdSetup separator - Trigger
+1 100 Sunken
+
+#cmdSetup separator - Trigger
+:labelformat: bold (80,80,80)
+1 100 Empty
+center Pending Setpoints
+
+#cmdSetup separator - Trigger
+1 100 Sunken
+
+#cmdSetup advNumber Pending_Voltage Trigger
+:read: [20];VOLT:TRIG?
+:write: VOLT:TRIG
+:format: D4
+:buttontext: Set
+:tip: Triggered voltage level.
+V 0 inList(Output_Range,"LOW,0")?LowVoltageMax:HighVoltageMax
+
+#cmdSetup advNumber Pending_Current Trigger
+:read: [20];CURR:TRIG?
+:write: CURR:TRIG
+:format: D4
+:buttontext: Set
+:tip: Triggered current limit.
+A 0 inList(Output_Range,"LOW,0")?LowCurrentMax:HighCurrentMax
+
+#cmdSetup separator - Trigger
+6 100 Empty
+
+#cmdSetup button Arm Trigger
+:write: INIT
+:updatedelayed: 0.2
+:update: Voltage Current
+:tip: Arm the trigger system.
+
+#cmdSetup button Trigger_Now Trigger
+:write: *TRG;*WAI
+:updatedelayed: 0.2
+:update: Voltage Current
+:tip: Fire software bus trigger.
+
+#cmdSetup separator - Utility
+1 100 Sunken
+
+#cmdSetup separator - Utility
+:labelformat: bold (80,80,80)
+1 100 Empty
+center Diagnostics
+
+#cmdSetup separator - Utility
+1 100 Sunken
+
+#cmdSetup button Beep Utility
+:write: SYST:BEEP
+:tip: Beep the instrument once.
+
+#cmdSetup infoAsk Identity Utility
+:read: [20];*IDN?
+:buttontext: Read ID
+:tip: Read *IDN? identification string.
+
+#cmdSetup infoAsk SCPI_Version Utility
+:read: [20];SYST:VERS?
+:buttontext: Read Version
+:tip: Read SCPI version.
+
+#cmdSetup infoAsk Self_Test Utility
+:read: [20];*TST?
+:buttontext: Run Self Test
+:tip: Run internal power supply self-test (returns 0 if passed).
+
+#cmdSetup infoAsk Last_Error Utility
+:read: [20];SYST:ERR?
+:buttontext: Read Error
+:tip: Read instrument error queue.
