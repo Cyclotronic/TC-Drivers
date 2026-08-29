@@ -20,6 +20,7 @@ Discussion and support for TestController itself is on the EEVblog thread
 | Driver | Instruments | Interface | Rev | Verified |
 | --- | --- | --- | --- | --- |
 | [Chroma 63000 Series](drivers/Chroma_63000_Series/) | Chroma 63003-150-40, 63004-150-60 DC electronic load | GPIB / LXI / serial | 1.4 | On hardware |
+| [HP / Agilent 6060B](drivers/HP_Agilent_6060B/) | HP / Agilent 6060B 300 W DC electronic load | GPIB / LXI / serial | 1.1 | On hardware |
 | [HP / Agilent E3631A](drivers/HP_Agilent_E3631A/) | HP E3631A triple-output DC power supply, +6 V / +25 V / -25 V | GPIB / RS-232 | 1.2 | On hardware |
 | [HP / Agilent E363xA](drivers/HP_Agilent_E363xA/) | HP E3632A, E3633A, E3634A DC power supply | GPIB / RS-232 | 1.8 | On hardware |
 | [Agilent / Keysight E364xA](drivers/HP_Agilent_E364xA/) | Agilent / Keysight E3640A–E3645A single-output DC power supply | GPIB / RS-232 | 1.3 | On hardware |

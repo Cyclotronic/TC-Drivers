@@ -1,0 +1,529 @@
+; HP / Agilent 6060B 300 W DC Electronic Load - TestController driver
+;
+; Coverage   HP / Agilent 6060B.
+;            Constant current (6 A / 60 A ranges), constant voltage, and
+;            constant resistance (low / middle / high ranges); continuous,
+;            pulsed and toggled transient operation; software over-current
+;            protection and input short simulation. Mode buttons switch a
+;            single per-mode settings view, with the active mode and Input on
+;            top and the transient and protection settings at the bottom of
+;            every view.
+;
+; Verified   Against a 6060B (firmware A.02.01) over GPIB - every command
+;            exercised on the instrument, every per-range limit read back from
+;            the hardware rather than the datasheet. Behaviour a user needs:
+;            MODE:CURR / :VOLT / :RES only (the "MODE CURR" space form is
+;            accepted then ignored); both slew rates snap to 12 discrete steps
+;            and clamp out-of-range values silently; constant resistance has no
+;            slew command and borrows the CV slew (low range) or CC slew (mid
+;            and high); an over-current trip clears with INPut:PROTection:CLEar,
+;            not CURR:PROT:CLE; the protection-status decode is unestablished so
+;            the indicator shows only healthy vs fault. Input current draw,
+;            short simulation and an over-current trip need a source on the
+;            input and were not exercised. See instrument-notes.md beside this
+;            file.
+;
+; Revision   1.1
+; Date       2026-08-29
+; Author     Cyclotron
+; License    MIT - see LICENSE
+;
+; Latest version: https://github.com/Cyclotronic/TC-Drivers
+; TestController by HKJ: https://lygte-info.dk/project/TestControllerIntro%20UK.html
+; Discussion: https://www.eevblog.com/forum/testgear/program-that-can-log-from-many-multimeters/
+
+#idString HEWLETT-PACKARD,6060
+#name HP 6060B
+#handle HP6060B
+#port 1234 com GPIB LXI
+#baudrate 115200
+#driver SCPI
+#eol \n
+#gpibReadEol eoi
+
+#author Cyclotron
+#notes HP/Agilent 6060B 300 W single-input DC electronic load. Selector layout - mode buttons plus a per-mode settings view, Info on top and Transient + Protection on the bottom of every view. Constant-current (6 A / 60 A), constant-voltage and constant-resistance (low / middle / high) operation, continuous / pulsed / toggled transient operation, software over-current protection and input short simulation. Command set and limits live-verified against a 6060B (firmware A.02.01) over GPIB.
+
+#value Voltage V D4
+#value Current A D4
+#value Power W D3
+
+#askValues MEAS:VOLT?;MEAS:CURR?;MEAS:POW?
+
+#askMode MODE?
+#askModeMathFormat trim(unQuote(value))
+#modeChangeDelay 0.3
+
+#finalCmd INP OFF;[*OPC]
+#outputOff INP OFF
+
+#interfaceType Load
+#interface setOn INP (value)
+#interface setMode MODE:(value)
+#interface setCurrent CURR (value)
+#interface setVoltage VOLT (value)
+#interface setResistance RES (value)
+#interface getOn INP?
+#interface getMode MODE?
+#interface getCurrent CURR?
+#interface getVoltage VOLT?
+#interface getResistance RES?
+#interface readVoltage 0
+#interface readCurrent 1
+#interface readPower 2
+
+; =========================================================
+; Mode Buttons
+; =========================================================
+#cmdModeLayout 3 1
+
+#cmdMode Constant_Current CURR
+MODE:CURR;[*OPC]
+
+#cmdMode Constant_Voltage VOLT
+MODE:VOLT;[*OPC]
+
+#cmdMode Constant_Resistance RES
+MODE:RES;[*OPC]
+
+; =========================================================
+; Setup View Selector
+; =========================================================
+; Info is on every line so the active-mode readout and Input sit at the top of
+; each view; Transient and Protection are on every line so they sit at the
+; bottom, because both apply to whichever mode is selected.
+#cmdSetup selector Mode_settings
+:read: MODE?
+:readmath: trim(unQuote(value))
+:updatemodechange:
+CURR Info. CC. Transient. Protection.
+VOLT Info. CV. Transient. Protection.
+RES Info. CR. Transient. Protection.
+
+; =========================================================
+; Active Mode Info  (top of every view)
+; =========================================================
+#cmdSetup info Active_Mode Info
+:labelformat: bold ++
+:read: MODE?
+:readmath: getElement("Constant Current;Constant Voltage;Constant Resistance",listIndex(trim(unQuote(value)),"CURR VOLT RES"," "),";")
+:updatemodechange:
+:layout:
+
+#cmdSetup toggleButton Input Info
+:read: INP?
+:write: INP (value)
+:updatedelayed: 0.2
+:updatealloff:
+:updatemodechange:
+:color: gray green
+:tip: Switch the load input on or off. One click toggles it - the button shows the state the input is in now.
+INPUT_OFF 0
+INPUT_ON 1
+
+#cmdSetup buttonsOn Short Info
+:read: INP:SHOR?
+:write: INP:SHOR (value)
+:updatemodechange:
+:color: (220,140,0)
+:tip: Simulate a short circuit across the input, using the active mode's slew rate. "INPUT OFF" takes precedence over this. It can damage the device under test - see the manual's warning.
+Off 0
+On 1
+
+#cmdSetup separator - Info
+6 100 Empty
+
+#cmdSetup separator - Info
+1 100 Sunken
+
+#cmdSetup separator - Info
+:labelformat: bold (80,80,80)
+1 100 Empty
+center Mode Settings
+
+#cmdSetup separator - Info
+1 100 Sunken
+
+; =========================================================
+; Constant Current  (MODE:CURR)
+; =========================================================
+; The Range radio picks the 6 A / 60 A range; each range-dependent field then
+; follows through its own nested selector so its leaf pages carry literal limits
+; and exactly one control each.
+#cmdSetup radio CC_Range CC
+:read: CURR:RANG?
+:readmath: (0+value)>10?"High":"Low"
+:write: CURR:RANG (getElement("6 60",listIndex(value,"Low High"," ")," "))
+:string:
+:updatemodechange:
+:update: CC_Current_sel CC_Transient_sel CC_Triggered_sel
+:updatedelayed: 0.3
+:tip: The 6 A range gives finer resolution; the 60 A range covers full current. The current fields below re-scale when this changes.
+Low Low
+High High
+
+#cmdSetup number CC_Slew CC
+:read: CURR:SLEW?
+:write: CURR:SLEW
+:updatemodechange:
+:format: si
+:buttontext: Set
+:tip: Current slew rate, in amps per second. The load snaps to the nearest of 12 hardware steps. This value is also the CR slew rate in the middle and high resistance ranges.
+A/s 1000 5000000
+
+#cmdSetup selector CC_Current_sel CC
+:read: CURR:RANG?
+:readmath: (0+value)>10?"High":"Low"
+:updatemodechange:
+Low CC_cur_lo.
+High CC_cur_hi.
+
+#cmdSetup number CC_Current CC_cur_lo
+:read: CURR?
+:write: CURR
+:updatemodechange:
+:format: D4
+:buttontext: Set
+:tip: Main constant-current setpoint. Takes effect immediately when CC is the active mode; otherwise it is stored until CC is selected or a trigger arrives.
+A 0 6
+
+#cmdSetup number CC_Current CC_cur_hi
+:read: CURR?
+:write: CURR
+:updatemodechange:
+:format: D4
+:buttontext: Set
+:tip: Main constant-current setpoint. Takes effect immediately when CC is the active mode; otherwise it is stored until CC is selected or a trigger arrives.
+A 0 60
+
+#cmdSetup selector CC_Transient_sel CC
+:read: CURR:RANG?
+:readmath: (0+value)>10?"High":"Low"
+:updatemodechange:
+Low CC_tl_lo.
+High CC_tl_hi.
+
+#cmdSetup number CC_Transient_Level CC_tl_lo
+:read: CURR:TLEV?
+:write: CURR:TLEV
+:updatemodechange:
+:format: D4
+:buttontext: Set
+:tip: Upper current level used while transient operation is on. In CC mode it must be set above the main level.
+A 0 6
+
+#cmdSetup number CC_Transient_Level CC_tl_hi
+:read: CURR:TLEV?
+:write: CURR:TLEV
+:updatemodechange:
+:format: D4
+:buttontext: Set
+:tip: Upper current level used while transient operation is on. In CC mode it must be set above the main level.
+A 0 60
+
+#cmdSetup selector CC_Triggered_sel CC
+:read: CURR:RANG?
+:readmath: (0+value)>10?"High":"Low"
+:updatemodechange:
+Low CC_tr_lo.
+High CC_tr_hi.
+
+#cmdSetup number CC_Triggered_Level CC_tr_lo
+:read: CURR:TRIG?
+:write: CURR:TRIG
+:updatemodechange:
+:format: D4
+:buttontext: Set
+:tip: Current level that becomes the main level when a GPIB trigger is received while CC is active.
+A 0 6
+
+#cmdSetup number CC_Triggered_Level CC_tr_hi
+:read: CURR:TRIG?
+:write: CURR:TRIG
+:updatemodechange:
+:format: D4
+:buttontext: Set
+:tip: Current level that becomes the main level when a GPIB trigger is received while CC is active.
+A 0 60
+
+; =========================================================
+; Constant Voltage  (MODE:VOLT) - single range
+; =========================================================
+#cmdSetup number CV_Voltage CV
+:read: VOLT?
+:write: VOLT
+:updatemodechange:
+:format: D3
+:buttontext: Set
+:tip: Constant-voltage setpoint. The load draws whatever current holds its input at this voltage. Operating range is 3 to 60 V.
+V 0 70
+
+#cmdSetup number CV_Slew CV
+:read: VOLT:SLEW?
+:write: VOLT:SLEW
+:updatemodechange:
+:format: si
+:buttontext: Set
+:tip: Voltage slew rate, in volts per second. Snaps to the nearest of 12 hardware steps; values outside the range are clamped with no error. This value is also the CR slew rate in the low resistance range.
+V/s 1200 5805300
+
+#cmdSetup number CV_Transient_Level CV
+:read: VOLT:TLEV?
+:write: VOLT:TLEV
+:updatemodechange:
+:format: D3
+:buttontext: Set
+:tip: Upper voltage level used while transient operation is on. Must be set above the main level.
+V 0 70
+
+#cmdSetup number CV_Triggered_Level CV
+:read: VOLT:TRIG?
+:write: VOLT:TRIG
+:updatemodechange:
+:format: D3
+:buttontext: Set
+:tip: Voltage level that becomes the main level when a GPIB trigger is received while CV is active.
+V 0 70
+
+; =========================================================
+; Constant Resistance  (MODE:RES)
+; =========================================================
+#cmdSetup radio CR_Range CR
+:read: RES:RANG?
+:readmath: (0+value)<10?"Low":((0+value)<5000?"Middle":"High")
+:write: RES:RANG (getElement("1 1000 10000",listIndex(value,"Low Middle High"," ")," "))
+:string:
+:updatemodechange:
+:update: CR_Resistance_sel CR_Transient_sel CR_Triggered_sel
+:updatedelayed: 0.3
+:tip: Resistance range. Each range keeps its own span and resolution, so the fields below re-scale when this changes. Low uses the CV slew rate; middle and high use the CC slew rate.
+Low Low
+Middle Middle
+High High
+
+#cmdSetup selector CR_Resistance_sel CR
+:read: RES:RANG?
+:readmath: (0+value)<10?"Low":((0+value)<5000?"Middle":"High")
+:updatemodechange:
+Low CR_res_lo.
+Middle CR_res_mid.
+High CR_res_hi.
+
+#cmdSetup number CR_Resistance CR_res_lo
+:read: RES?
+:write: RES
+:updatemodechange:
+:format: D3
+:buttontext: Set
+:tip: Constant-resistance setpoint in ohms. Slew follows the CV slew field in the low range.
+Ohm 0 1.17
+
+#cmdSetup number CR_Resistance CR_res_mid
+:read: RES?
+:write: RES
+:updatemodechange:
+:format: D3
+:buttontext: Set
+:tip: Constant-resistance setpoint in ohms. Slew follows the CC slew field in the middle and high ranges.
+Ohm 1 1170
+
+#cmdSetup number CR_Resistance CR_res_hi
+:read: RES?
+:write: RES
+:updatemodechange:
+:format: D3
+:buttontext: Set
+:tip: Constant-resistance setpoint in ohms. Slew follows the CC slew field in the middle and high ranges.
+Ohm 10 11700
+
+#cmdSetup selector CR_Transient_sel CR
+:read: RES:RANG?
+:readmath: (0+value)<10?"Low":((0+value)<5000?"Middle":"High")
+:updatemodechange:
+Low CR_tl_lo.
+Middle CR_tl_mid.
+High CR_tl_hi.
+
+#cmdSetup number CR_Transient_Level CR_tl_lo
+:read: RES:TLEV?
+:write: RES:TLEV
+:updatemodechange:
+:format: D3
+:buttontext: Set
+:tip: Transient resistance level. In the low range it must be above the main level.
+Ohm 0 1.17
+
+#cmdSetup number CR_Transient_Level CR_tl_mid
+:read: RES:TLEV?
+:write: RES:TLEV
+:updatemodechange:
+:format: D3
+:buttontext: Set
+:tip: Transient resistance level. In the middle and high ranges it must be below the main level.
+Ohm 1 1170
+
+#cmdSetup number CR_Transient_Level CR_tl_hi
+:read: RES:TLEV?
+:write: RES:TLEV
+:updatemodechange:
+:format: D3
+:buttontext: Set
+:tip: Transient resistance level. In the middle and high ranges it must be below the main level.
+Ohm 10 11700
+
+#cmdSetup selector CR_Triggered_sel CR
+:read: RES:RANG?
+:readmath: (0+value)<10?"Low":((0+value)<5000?"Middle":"High")
+:updatemodechange:
+Low CR_tr_lo.
+Middle CR_tr_mid.
+High CR_tr_hi.
+
+#cmdSetup number CR_Triggered_Level CR_tr_lo
+:read: RES:TRIG?
+:write: RES:TRIG
+:updatemodechange:
+:format: D3
+:buttontext: Set
+:tip: Resistance level that becomes the main level when a GPIB trigger is received while CR is active.
+Ohm 0 1.17
+
+#cmdSetup number CR_Triggered_Level CR_tr_mid
+:read: RES:TRIG?
+:write: RES:TRIG
+:updatemodechange:
+:format: D3
+:buttontext: Set
+:tip: Resistance level that becomes the main level when a GPIB trigger is received while CR is active.
+Ohm 1 1170
+
+#cmdSetup number CR_Triggered_Level CR_tr_hi
+:read: RES:TRIG?
+:write: RES:TRIG
+:updatemodechange:
+:format: D3
+:buttontext: Set
+:tip: Resistance level that becomes the main level when a GPIB trigger is received while CR is active.
+Ohm 10 11700
+
+; =========================================================
+; Transient Operation  (bottom of every view)
+; =========================================================
+#cmdSetup separator - Transient
+6 100 Empty
+
+#cmdSetup separator - Transient
+1 100 Sunken
+
+#cmdSetup separator - Transient
+:labelformat: bold (80,80,80)
+1 100 Empty
+center Transient Operation
+
+#cmdSetup separator - Transient
+1 100 Sunken
+
+#cmdSetup buttonsOn Transient Transient
+:read: TRAN?
+:write: TRAN (value)
+:updatemodechange:
+:tip: Switch transient operation on or off. The load then alternates between the active mode's main and transient levels at the associated slew rate.
+Off 0
+On 1
+
+#cmdSetup radio Transient_Mode Transient
+:read: TRAN:MODE?
+:write: TRAN:MODE (value)
+:string:
+:updatemodechange:
+:tip: Continuous repeats a pulse train set by Frequency and Duty Cycle. Pulsed produces one transient pulse of the Pulse Width per trigger. Toggled flips between the two levels on each trigger.
+Continuous CONT
+Pulsed PULS
+Toggled TOGG
+
+#cmdSetup number Transient_Frequency Transient
+:read: TRAN:FREQ?
+:write: TRAN:FREQ
+:updatemodechange:
+:format: si
+:buttontext: Set
+:tip: Pulse-train frequency for continuous transient mode.
+Hz 0.25 10000
+
+#cmdSetup number Transient_Duty_Cycle Transient
+:read: TRAN:DCYC?
+:write: TRAN:DCYC
+:updatemodechange:
+:format: D1
+:buttontext: Set
+:tip: Pulse-train duty cycle for continuous transient mode. The load limits this to 3-97 % below 1 kHz and 6-94 % above 1 kHz.
+% 3 97
+
+#cmdSetup number Transient_Pulse_Width Transient
+:read: TRAN:TWID?
+:write: TRAN:TWID
+:updatemodechange:
+:format: si
+:buttontext: Set
+:tip: Pulse width for pulsed transient mode.
+s 0.00005 4
+
+; =========================================================
+; Protection  (bottom of every view)
+; =========================================================
+#cmdSetup separator - Protection
+6 100 Empty
+
+#cmdSetup separator - Protection
+1 100 Sunken
+
+#cmdSetup separator - Protection
+:labelformat: bold (80,80,80)
+1 100 Empty
+center Protection Settings
+
+#cmdSetup separator - Protection
+1 100 Sunken
+
+#cmdSetup indicator Protection_Status Protection
+:read: STAT:QUES:COND?
+:updatemodechange:
+:updatealloff:
+:tip: Lights red on any questionable-status condition - over-current, over-voltage, over-temperature or reverse voltage. The raw status code is shown. The per-bit decode has not been confirmed on this instrument, so no single condition is named. The input stays latched off until Clear Protection is pressed.
+Normal int(value)==0 green
+Fault int(value)!=0 red
+
+#cmdSetup button Clear_Protection Protection
+:write: INP:PROT:CLE
+:update: Protection_Status
+:updatedelayed: 0.3
+:tip: Clears a latched protection shutdown. The input stays off until this is pressed and then switched back on.
+
+#cmdSetup buttonsOn OCP_Enable Protection
+:read: CURR:PROT:STAT?
+:write: CURR:PROT:STAT (value)
+:updatemodechange:
+:tip: Enable or disable the software over-current limit.
+Off 0
+On 1
+
+#cmdSetup number OCP_Limit Protection
+:read: CURR:PROT?
+:write: CURR:PROT
+:updatemodechange:
+:format: D3
+:buttontext: Set
+:tip: Software over-current limit. When enabled, input current above this for longer than the delay shuts the input off. Applies in every mode, not just CC.
+A 0 61.2
+
+#cmdSetup number OCP_Delay Protection
+:read: CURR:PROT:DEL?
+:write: CURR:PROT:DEL
+:updatemodechange:
+:format: D2
+:buttontext: Set
+:tip: How long the current may exceed the limit before the input is shut off.
+s 0 60
+
+#cmdSetup separator - Protection
+6 100 Empty
