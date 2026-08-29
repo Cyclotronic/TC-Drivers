@@ -1,7 +1,9 @@
-; HP / Agilent / Keysight E364xA DC Power Supplies - TestController driver
+; Agilent / Keysight E364xA DC Power Supplies - TestController driver
 ;
 ; Coverage   E3640A, E3641A, E3642A, E3643A, E3644A and E3645A - the
-;            single-output, dual-range models (30 W, 50 W and 80 W tiers).
+;            single-output, dual-range models (30 W, 50 W and 80 W tiers),
+;            under Agilent or Keysight branding. The family postdates the HP
+;            name; nothing reports HEWLETT-PACKARD in *IDN?.
 ;            Both output ranges, voltage and current setpoints with a fine
 ;            adjust page, overvoltage protection with a trip indicator, bus
 ;            and immediate triggering, front-panel display text, five stored
@@ -21,7 +23,7 @@
 ;            range and step figures and still need hardware confirmation.
 ;            See instrument-notes.md beside this file.
 ;
-; Revision   1.2
+; Revision   1.3
 ; Date       2026-08-28
 ; Author     Cyclotron
 ; License    MIT - see LICENSE
@@ -35,20 +37,6 @@
 #idString Agilent Technologies,E3640A,
 #name Agilent E3640A
 #handle AgilentE3640A
-#replaceText LowRangeName 8V_3A
-#replaceText HighRangeName 20V_1.5A
-#replaceText LowVoltageMax 8.24
-#replaceText LowCurrentMax 3.09
-#replaceText HighVoltageMax 20.60
-#replaceText HighCurrentMax 1.545
-#replaceText OVPMax 22
-#replaceText VoltageStepMin 0.00035
-#replaceText CurrentStepMin 0.000052
-
-#metadef
-#idString HEWLETT-PACKARD,E3640A,
-#name HP E3640A
-#handle HPE3640A
 #replaceText LowRangeName 8V_3A
 #replaceText HighRangeName 20V_1.5A
 #replaceText LowVoltageMax 8.24
@@ -90,20 +78,6 @@
 #replaceText CurrentStepMin 0.000014
 
 #metadef
-#idString HEWLETT-PACKARD,E3641A,
-#name HP E3641A
-#handle HPE3641A
-#replaceText LowRangeName 35V_0.8A
-#replaceText HighRangeName 60V_0.5A
-#replaceText LowVoltageMax 36.05
-#replaceText LowCurrentMax 0.824
-#replaceText HighVoltageMax 61.80
-#replaceText HighCurrentMax 0.515
-#replaceText OVPMax 66
-#replaceText VoltageStepMin 0.001127
-#replaceText CurrentStepMin 0.000014
-
-#metadef
 #idString Keysight Technologies,E3641A,
 #name Keysight E3641A
 #handle KeysightE3641A
@@ -123,20 +97,6 @@
 #idString Agilent Technologies,E3642A,
 #name Agilent E3642A
 #handle AgilentE3642A
-#replaceText LowRangeName 8V_5A
-#replaceText HighRangeName 20V_2.5A
-#replaceText LowVoltageMax 8.24
-#replaceText LowCurrentMax 5.15
-#replaceText HighVoltageMax 20.60
-#replaceText HighCurrentMax 2.575
-#replaceText OVPMax 22
-#replaceText VoltageStepMin 0.00038
-#replaceText CurrentStepMin 0.000095
-
-#metadef
-#idString HEWLETT-PACKARD,E3642A,
-#name HP E3642A
-#handle HPE3642A
 #replaceText LowRangeName 8V_5A
 #replaceText HighRangeName 20V_2.5A
 #replaceText LowVoltageMax 8.24
@@ -178,20 +138,6 @@
 #replaceText CurrentStepMin 0.000026
 
 #metadef
-#idString HEWLETT-PACKARD,E3643A,
-#name HP E3643A
-#handle HPE3643A
-#replaceText LowRangeName 35V_1.4A
-#replaceText HighRangeName 60V_0.8A
-#replaceText LowVoltageMax 36.05
-#replaceText LowCurrentMax 1.442
-#replaceText HighVoltageMax 61.80
-#replaceText HighCurrentMax 0.824
-#replaceText OVPMax 66
-#replaceText VoltageStepMin 0.00114
-#replaceText CurrentStepMin 0.000026
-
-#metadef
 #idString Keysight Technologies,E3643A,
 #name Keysight E3643A
 #handle KeysightE3643A
@@ -222,20 +168,6 @@
 #replaceText CurrentStepMin 0.000152
 
 #metadef
-#idString HEWLETT-PACKARD,E3644A,
-#name HP E3644A
-#handle HPE3644A
-#replaceText LowRangeName 8V_8A
-#replaceText HighRangeName 20V_4A
-#replaceText LowVoltageMax 8.24
-#replaceText LowCurrentMax 8.24
-#replaceText HighVoltageMax 20.60
-#replaceText HighCurrentMax 4.12
-#replaceText OVPMax 22
-#replaceText VoltageStepMin 0.00035
-#replaceText CurrentStepMin 0.000152
-
-#metadef
 #idString Keysight Technologies,E3644A,
 #name Keysight E3644A
 #handle KeysightE3644A
@@ -255,20 +187,6 @@
 #idString Agilent Technologies,E3645A,
 #name Agilent E3645A
 #handle AgilentE3645A
-#replaceText LowRangeName 35V_2.2A
-#replaceText HighRangeName 60V_1.3A
-#replaceText LowVoltageMax 36.05
-#replaceText LowCurrentMax 2.266
-#replaceText HighVoltageMax 61.80
-#replaceText HighCurrentMax 1.339
-#replaceText OVPMax 66
-#replaceText VoltageStepMin 0.00114
-#replaceText CurrentStepMin 0.000042
-
-#metadef
-#idString HEWLETT-PACKARD,E3645A,
-#name HP E3645A
-#handle HPE3645A
 #replaceText LowRangeName 35V_2.2A
 #replaceText HighRangeName 60V_1.3A
 #replaceText LowVoltageMax 36.05

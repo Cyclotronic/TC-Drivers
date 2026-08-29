@@ -1,8 +1,9 @@
-# HP / Agilent / Keysight E364xA DC Power Supplies
+# Agilent / Keysight E364xA DC Power Supplies
 
 TestController driver for the **E3640A**, **E3641A**, **E3642A**, **E3643A**, **E3644A**
 and **E3645A** — the single-output, dual-range bench supplies in the E3640A family
-(30 W, 50 W and 80 W tiers).
+(30 W, 50 W and 80 W tiers). Sold under Agilent and, from 2014, Keysight branding;
+the family postdates the HP name.
 
 Verified against an **E3641A** (firmware 1.8-5.0-1.0) over GPIB, page by page, with the
 output run into an electronic load for the constant-voltage / constant-current pass. Both

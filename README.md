@@ -22,7 +22,7 @@ Discussion and support for TestController itself is on the EEVblog thread
 | [Chroma 63000 Series](drivers/Chroma_63000_Series/) | Chroma 63003-150-40, 63004-150-60 DC electronic load | GPIB / LXI / serial | 1.4 | On hardware |
 | [HP / Agilent E3631A](drivers/HP_Agilent_E3631A/) | HP E3631A triple-output DC power supply, +6 V / +25 V / -25 V | GPIB / RS-232 | 1.2 | On hardware |
 | [HP / Agilent E363xA](drivers/HP_Agilent_E363xA/) | HP E3632A, E3633A, E3634A DC power supply | GPIB / RS-232 | 1.8 | On hardware |
-| [HP / Agilent E364xA](drivers/HP_Agilent_E364xA/) | HP E3640A–E3645A single-output DC power supply | GPIB / RS-232 | 1.2 | On hardware |
+| [Agilent / Keysight E364xA](drivers/HP_Agilent_E364xA/) | Agilent / Keysight E3640A–E3645A single-output DC power supply | GPIB / RS-232 | 1.3 | On hardware |
 | [Agilent 33250A](drivers/Agilent_33250A/) | Agilent / Keysight 33250A 80 MHz function / arbitrary waveform generator | GPIB / RS-232 | 1.0 | As shipped |
 | [Keithley 200X](drivers/Keithley_200X/) | Keithley 2001, 2001M, 2002 bench multimeter | GPIB | 1.0 | As shipped |
 | [Leo Bodnar LBE-1420](drivers/LeoBodnar_LBE-1420/) | Leo Bodnar LBE-1420 GPS/GNSS receiver, read-only NMEA | Serial | 1.2 | Shipped, renamed |
