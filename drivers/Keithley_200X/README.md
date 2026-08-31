@@ -130,6 +130,27 @@ the two agree. Full account in
 Eight pages, one per function, each shown when the meter is in that function. The layout
 repeats: ranging at the top, integration time under it, then a **Filter Settings** block.
 
+The `Mode_settings` selector at the top of the dialog follows the meter — the page you
+see is the function the meter is actually in — and the mode menu is how you switch it:
+
+![Mode menu](screenshots/k2002-mode-menu.png)
+
+The DC volts page is the common shape every function repeats:
+
+![DC Voltage page](screenshots/k2002-dc-voltage.png)
+
+> The screenshots on this page were taken through the driver's own Setup dialog against a
+> Keithley **2002** on the bench (`*IDN?` → `MODEL 2002`). They show the pages the `Keithley
+> 2002` definition builds; the 2001 / 2001M definitions differ only where
+> [noted above](#the-2001-and-2001m-are-not-sent-the-2002s-limits).
+>
+> **DC volts** has since had a cabled pass: every declared range is accepted by the meter
+> and reads back unchanged, `NPLC`/filter/threshold limits match, and a supply stepped
+> 0.15–24 V read back through the driver within the reference's own accuracy at every
+> point — including the manual-range writes and the over-range (`∞`) path. AC, resistance,
+> frequency and temperature have **not** had a cabled measurement pass. See
+> [`instrument-notes.md`](instrument-notes.md#reading-a-dc-voltage--what-a-cabled-pass-showed).
+
 ### Ranging
 
 `*_Range_Auto` switches autoranging; the range combo below it selects manually and turns
@@ -146,6 +167,13 @@ rather than its nominal name:
 | DC and AC current | 200 µA, 2 mA, 20 mA, 200 mA, 2 A (written as 2.1 A) |
 | Resistance, 2-wire | 20 Ω, 200 Ω, 2 kΩ, 20 kΩ, 200 kΩ, 2 MΩ, 20 MΩ, 200 MΩ, 1 GΩ (written as 1.05 GΩ) |
 | Resistance, 4-wire | 20 Ω, 200 Ω, 2 kΩ, 20 kΩ, 200 kΩ, and 2 MΩ on the 2002 only |
+
+| DC current | 2-wire resistance | 4-wire resistance |
+| --- | --- | --- |
+| ![DC Current page](screenshots/k2002-dc-current.png) | ![2-wire resistance page](screenshots/k2002-two-wire-resistance.png) | ![4-wire resistance page](screenshots/k2002-four-wire-resistance.png) |
+
+The 4-wire page above is the `Keithley 2002` build — the range combo carries the **2 MΩ**
+entry that the 2001 / 2001M definitions remove.
 
 ### Integration time
 
@@ -176,6 +204,8 @@ one that would not do anything.
 
 ### AC volts and AC current
 
+![AC Voltage page](screenshots/k2002-ac-voltage.png)
+
 Two controls beyond the common set:
 
 - **`Coupling`** — `AC` filters the DC component out, `DC` includes it. In DC coupling the
@@ -186,6 +216,8 @@ Two controls beyond the common set:
 
 ### Frequency
 
+![Frequency page, voltage source](screenshots/k2002-frequency.png)
+
 `Source` selects whether frequency is measured on the voltage or the current input, and a
 sub-selector swaps in the matching threshold page — `Frequency_VOLT` or `Frequency_CURR`.
 The threshold range is 1 V to 1000 V, or 1 mA to 1 A; `Trigger_Level` is −60 % to +60 % of
@@ -194,8 +226,11 @@ to. `Coupling` behaves as it does on the AC pages.
 
 ### Temperature
 
+![Temperature page, 4-wire RTD transducer](screenshots/k2002-temperature.png)
+
 `Transducer_Type` chooses thermocouple, 2-wire RTD, 4-wire RTD, or — **on the 2002 only**
-— the internal sensor, and swaps in the matching configuration page.
+— the internal sensor, and swaps in the matching configuration page. The `Internal` option
+above is present because this is the 2002 build; the 2001 / 2001M definitions remove it.
 
 - **Thermocouple** (`Temperature_TC`) — types J, K, T, E, R, S, B and N; reference
   junction `Simulated` (with its temperature, 0–50 °C) or `Real` (with a coefficient and a
@@ -283,3 +318,14 @@ from what everyone else runs. None of these stops it working.
   setup guidance, has nothing to show for this one. That is what this page is for.
 - **The `Temperature` column's unit is fixed at `°C`** regardless of `Temperature_Unit`,
   and `°C` is not one of the standard unit strings.
+- **The `buttonsOn` indicator lamps do not track state.** On every filter page the small
+  lamp beside `Filter` / `Auto_Average` / `Advanced_Average` (and `AVG_Filter` on the
+  temperature page, and `Display` in Global Settings) sits red regardless of whether the
+  control is on or off — see the screenshots above. The buttons themselves read and write
+  correctly; only the lamp is cosmetic. On a freshly connected meter the lamps can also
+  come up half-painted before the first mode change.
+- **The range combo display lags while autoranging is on.** When `*_Range_Auto` is `Auto`
+  and the meter changes range by itself, the range combo keeps showing the previous range
+  until the page is refreshed (touch `Auto`/`Manual`, change mode, or reopen the dialog).
+  Readings are unaffected — only the displayed range. Details in
+  [`instrument-notes.md`](instrument-notes.md#reading-a-dc-voltage--what-a-cabled-pass-showed).

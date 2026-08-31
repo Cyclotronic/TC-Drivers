@@ -14,6 +14,30 @@ byte-identical to the one that release installs.
 Nothing here was re-measured for this publication. Where a statement comes from reading
 the file or from Keithley's own documentation rather than from the bench, it says so.
 
+The screenshots in [`README.md`](README.md) were captured later, against a bench **2002**,
+by walking every page of the shipped definition's Setup dialog. That pass confirmed the
+pages render and that the 2002 build carries the values the table below lists (50 NPLC
+ceiling, the 4-wire 2 MΩ range, the `Internal` transducer).
+
+A later pass on the same 2002 checked the ranges and the DC-voltage read path against
+hardware:
+
+- **Range / limit audit (query-only).** Every declared range value for all six
+  voltage / current / resistance functions is accepted by the meter and reads back
+  unchanged, and `:FUNC:RANG? MAX` equals the driver's top-of-combo figure in every case
+  (1100 V, 775 V, 2.1 A, 1.05 GΩ, and 2.1 MΩ on the 4-wire range). `:FUNC:NPLC? MAX`
+  returns 50 on the 2002 — the metadef substitution is doing its job. The filter count
+  (1–100), advanced-filter tolerance (0–100 %) and frequency threshold ranges all match.
+  Two the audit could **not** confirm: the RTD constant fields (`RTD:RZER/ALPH/BETA/DELT`)
+  reject `? MAX` with `-108`, so those bounds remain Keithley-manual figures; and the
+  driver's `TC_SIM_Ref_Temp` upper bound of `323` is a Kelvin number, while the meter
+  reports its `RJUN:SIM` maximum as `50` in whatever unit is active — harmless, the meter
+  clamps.
+- **DC voltage, cabled.** A supply stepped 0.15 V → 24 V and read back through the driver
+  (`FETC?`) tracked a reference within the reference's own accuracy at every point — see
+  *Reading a DC voltage* below for what the driver does and does not get right. AC,
+  resistance, frequency and temperature have **not** had a cabled measurement pass.
+
 ---
 
 ## Three meters from one file
@@ -81,6 +105,31 @@ Two consequences:
 
 `#readingDelay 5` is likewise a **timeout**, not a pacing delay — it is how long
 TestController will wait for the reply, not how long it waits between requests.
+
+---
+
+## Reading a DC voltage — what a cabled pass showed
+
+Confirmed on a bench 2002 with a supply stepped 0.15 V to 24 V, read through the driver.
+
+- **The `UXX` parse is right.** The meter's `FETC?` reply looks like
+  `+1.49669E+00NVDC,+300966.24SECS,+24644RDNG#,00EXTCHAN`. The driver logs `1.49669` —
+  the mantissa of the first element, with the `NVDC` (or `OVDC`, or any other status +
+  unit suffix) stripped and the timestamp / reading-number / channel elements dropped.
+  Both `E-03` and `E+00` exponent forms parse. No scale error, correct sign, unit `V`.
+- **Over-range is passed through as infinity.** Force a range too small — 15 V on the 2 V
+  range — and the meter returns `+9.9E37OVDC`. The driver has no special handling for
+  this; it strips the letters and hands TestController `9.9E37`, which TestController
+  already treats as its over-range sentinel and shows as `∞`. Min/Max keep their last
+  valid values, and autoranging recovers on its own once the input is back in range.
+- **The `*_Range` combo goes stale while autoranging is on.** Nothing in the driver
+  re-reads `:VOLT:DC:RANG?` on TestController's own polling cycle, so while `Auto` is
+  selected and the meter changes range by itself, the combo keeps showing whatever range
+  was current the last time the page refreshed (dialog opened, mode changed, or a related
+  control was operated). The *reading* is always correct — only the displayed range field
+  lags. Touch `Auto`/`Manual`, or reopen the page, and it catches up. This is how the
+  TestController setup dialog behaves in general; it is just more visible here because
+  autoranging is the connect default.
 
 ---
 
@@ -239,3 +288,8 @@ these is a request to make on the thread instead.
 - **`°C` is not one of the standard `#value` unit strings**, and as noted above it does not
   track `Temperature_Unit`.
 - **Three `:enable:` lines carry trailing whitespace** on the RTD page. Cosmetic.
+- **The `buttonsOn` state lamps are stuck.** The lamp beside `Filter`, `Auto_Average`,
+  `Advanced_Average`, `AVG_Filter` and `Display` shows red whatever the control's actual
+  state, and can render half-painted on a freshly connected meter until the first mode
+  change. The buttons read and write correctly — only the indicator is wrong. Visible in
+  every filter-page screenshot.
