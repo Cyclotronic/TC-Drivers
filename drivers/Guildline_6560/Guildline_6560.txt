@@ -1,0 +1,177 @@
+; Guildline Instruments 6560 Precision Resistance Calibrator - TestController driver
+;
+; Coverage   Guildline 6560 Resistance Calibrator / Decade Standard, 0 Ohm to 100 MOhm
+;            across 19 nominal standards plus Open Circuit. Resistor selection, 2-wire /
+;            4-wire terminal configuration, step up/down, guard toggle, and system-info
+;            readback (identification, calibration date, clock, options, ROM checksum,
+;            uptime).
+;
+; Verified   Against a 6560 (firmware rev D) over a Prologix GPIB-Ethernet gateway, with
+;            a measured relay-settle timing sweep. The instrument never asserts EOI on
+;            GPIB reads; *CLS does not exist and ';'-joined compound commands are
+;            rejected; there is no query for the current 2-wire/4-wire state, so 4-wire
+;            (the Device Clear default) needs confirming on the front panel if in doubt.
+;            See instrument-notes.md beside this file.
+;
+; Revision   1.1
+; Date       2026-09-03
+; Author     Cyclotron
+; License    MIT - see LICENSE
+;
+; Latest version: https://github.com/Cyclotronic/TC-Drivers
+; TestController by HKJ: https://lygte-info.dk/project/TestControllerIntro%20UK.html
+; Discussion: https://www.eevblog.com/forum/testgear/program-that-can-log-from-many-multimeters/
+
+#idString Guildline Instruments, 6560,
+#name Guildline 6560
+#handle Guildline6560
+#port GPIB
+#driver SCPIx
+#eol \n
+; The 6560 terminates replies with LF and NEVER asserts EOI (manual 4.1.9), so the
+; default '++read eoi' hangs every read to the full timeout. Same fix as the stock
+; Fluke8840A / Keithley199 / Racal / Yokogawa drivers.
+#gpibReadEol 10
+#interfaceType Calibrator
+; 0.5s was too tight: confirmed live that a plain *IDN? read can
+; genuinely miss a 500ms window over PrologixEthernet with this no-EOI instrument,
+; producing a null read - and worse, TC then serves the STALE queued reply on the
+; NEXT read, which looks like corrupted/misattributed data rather than a timeout.
+; This is a ceiling, not a pacing delay (nothing here is billed on the fast path),
+; so it costs nothing to be generous - the 6560 itself answers most commands in
+; well under 150ms per the manual.
+#readingDelay 2.5
+#author Cyclotron
+
+#notes Guildline Instruments Model 6560 Precision Resistance Calibrator / Decade Standard (0 Ω to 100 MΩ across 19 nominal standards + Open Circuit). Note that mechanical relay switching takes ~200-500 ms to actuate and settle.
+
+; =============================================================================
+; COMMUNICATION & INITIALIZATION
+; =============================================================================
+
+; *CLS does NOT exist on the 6560 (not in the manual's command list, and confirmed
+; live: it sets CME in the ESR). The parser also rejects ';'-compounded commands,
+; so the old '*CLS;TERSE' failed on both counts and TERSE never took effect.
+; The ESR is cleared by READING it (*ESR?), not by a command.
+#initCmd TERSE
+; No #finalCmd: the only thing it did was *CLS, which this instrument rejects.
+#outputOff RESISTOR 20000000000
+
+; =============================================================================
+; LOGGED VALUES
+; =============================================================================
+
+#value Resistance Ohm SI
+#askValues RESISTOR?
+
+; =============================================================================
+; SETUP CONTROLS - MAIN PAGE
+; =============================================================================
+
+#cmdSetup combobox Resistor Main
+:read: RESISTOR?
+; TestController's ":readmath:" expression evaluates only ONE level of a chained ternary:
+; an unparenthesized "A?a:B?b:C?c:...:z" evaluates the first "A?a:(...)" and then parses
+; everything after the first ":" as a single bare comparison, never as a further ternary.
+; Confirmed live: setting 19.0 kOhm wrote correctly to the instrument and read back
+; 19000.000, but the combobox displayed "Short (0 Ohm)" because the whole chain collapsed
+; to the boolean result of the SECOND comparison - every bucket except the first one was
+; affected. Fix: wrap each nested "else" in parentheses; a parenthesized sub-expression is
+; evaluated as a full ternary again, which is why the single-level readmath on the
+; Actual_Resistance field below already worked without needing this.
+:readmath: double(value) < 0.5 ? "0" : (double(value) < 1.45 ? "1" : (double(value) < 5.0 ? "1.9" : (double(value) < 14.5 ? "10" : (double(value) < 50.0 ? "19" : (double(value) < 145.0 ? "100" : (double(value) < 500.0 ? "190" : (double(value) < 1450.0 ? "1000" : (double(value) < 5000.0 ? "1900" : (double(value) < 14500.0 ? "10000" : (double(value) < 50000.0 ? "19000" : (double(value) < 145000.0 ? "100000" : (double(value) < 500000.0 ? "190000" : (double(value) < 1450000.0 ? "1000000" : (double(value) < 5000000.0 ? "1900000" : (double(value) < 14500000.0 ? "10000000" : (double(value) < 50000000.0 ? "19000000" : (double(value) < 500000000.0 ? "100000000" : ("20000000000"))))))))))))))))))
+:write: RESISTOR
+; Without a delay, TestController re-reads RESISTOR? immediately after the write and
+; races the relay - confirmed live: after writing a new value, RESISTOR? still returned
+; the OLD value at both 423ms and 624ms, only showing the new one by 1413ms. This is what
+; looked like the combobox 'reverting' after Set - it never reverted, it read back before
+; the relay finished moving. Settle time varies by which transition (some pairs settle
+; under 300ms, others over 600ms), so this is set generously rather than tuned to a
+; specific case.
+:updatedelayed: 1.5
+:tip: Select standard nominal resistance value
+:update: Main.Actual_Resistance
+Short_(0_Ohm) 0
+1.0_Ohm 1
+1.9_Ohm 1.9
+10.0_Ohm 10
+19.0_Ohm 19
+100.0_Ohm 100
+190.0_Ohm 190
+1.0_kOhm 1000
+1.9_kOhm 1900
+10.0_kOhm 10000
+19.0_kOhm 19000
+100.0_kOhm 100000
+190.0_kOhm 190000
+1.0_MOhm 1000000
+1.9_MOhm 1900000
+10.0_MOhm 10000000
+19.0_MOhm 19000000
+100.0_MOhm 100000000
+Open_Circuit_(>20_GOhm) 20000000000
+
+#cmdSetup infoAsk Actual_Resistance Main
+:read: RESISTOR?
+:readmath: double(value) >= 1e10 ? "Open Circuit (> 20 GOhm)" : (value + " Ohm")
+:tip: Current calibrated actual resistance of active standard
+
+#cmdSetup buttons Terminals Main
+; Write-only: the 6560 has no query for the current 2-wire/4-wire state (checked the
+; full command list - nothing in *STB?/*ESR? either), so this can drift from the
+; instrument if someone touches the front panel. Device Clear resets to 4-wire
+; (manual 4.1.4); the 2-TERMINAL/4-TERMINAL front-panel LEDs are otherwise the only
+; ground truth.
+:write: KEY (value=="2W"?"T":"F")
+:tip: Select 2-Wire or 4-Wire terminal configuration. 4-Wire is the instrument's default (set on Device Clear) - there is no remote query for this state, so if in doubt check the 2-TERMINAL/4-TERMINAL LED on the front panel.
+2-Wire 2W
+4-Wire 4W
+
+#cmdSetup buttons Step Main
+:write: KEY (value=="UP"?"U":"D")
+:tip: Step up or down to adjacent resistance standard
+:update: Main.Resistor Main.Actual_Resistance
+Step_Down D
+Step_Up U
+
+#cmdSetup button Toggle_Guard Main
+:write: KEY G
+:tip: Toggle Guard relay connection
+
+; =============================================================================
+; SETUP CONTROLS - SYSTEM / INFO PAGE
+; =============================================================================
+
+#cmdSetup infoAsk Identification System
+:read: *IDN?
+:layout:
+:tip: Instrument identification string
+
+#cmdSetup infoAsk Installed_Options System
+:read: *OPT?
+:tip: Installed options and line frequency
+
+#cmdSetup infoAsk Calibration_Date System
+:read: CAL?
+:layout:
+:tip: Date and time of last calibration (YY/MM/DD HH:MM:SS)
+
+#cmdSetup infoAsk Clock_Date System
+:read: DATE?
+:tip: Internal clock date (YY/MM/DD)
+
+#cmdSetup infoAsk Clock_Time System
+:read: TIME?
+:tip: Internal clock time
+
+#cmdSetup infoAsk Options_Byte System
+:read: OPTIONS?
+:tip: Hardware options register byte
+
+#cmdSetup infoAsk ROM_Checksum System
+:read: ROMCHECKSUM?
+:tip: Internal firmware ROM checksum
+
+#cmdSetup infoAsk Uptime_Seconds System
+:read: UPTIME?
+:tip: Uptime in seconds since power-on
