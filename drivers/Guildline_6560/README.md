@@ -10,7 +10,7 @@ driver's read timeout and update delay.
 | | |
 | --- | --- |
 | **Driver** | [`Guildline_6560.txt`](Guildline_6560.txt) |
-| **Revision** | 1.1 |
+| **Revision** | 1.2 |
 | **Interface** | GPIB |
 | **Instrument notes** | [`instrument-notes.md`](instrument-notes.md) |
 
@@ -27,7 +27,8 @@ whole point of a calibration standard.
 
 `Terminals` switches between 2-wire and 4-wire measurement. **The instrument has no
 remote query for which one is currently active** — if in doubt, check the 2-TERMINAL /
-4-TERMINAL LED on the front panel. 4-wire is the default after a Device Clear.
+4-TERMINAL LED on the front panel. 4-wire is the default after a Device Clear, which is
+called out directly above the control since there is no other way to see it in TestController.
 
 `Step Down` / `Step Up` move to the adjacent standard in the 19-value sequence.
 `Toggle Guard` switches the guard relay connection.

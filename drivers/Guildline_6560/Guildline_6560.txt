@@ -13,7 +13,7 @@
 ;            (the Device Clear default) needs confirming on the front panel if in doubt.
 ;            See instrument-notes.md beside this file.
 ;
-; Revision   1.1
+; Revision   1.2
 ; Date       2026-09-03
 ; Author     Cyclotron
 ; License    MIT - see LICENSE
@@ -116,6 +116,19 @@ Open_Circuit_(>20_GOhm) 20000000000
 :readmath: double(value) >= 1e10 ? "Open Circuit (> 20 GOhm)" : (value + " Ohm")
 :tip: Current calibrated actual resistance of active standard
 
+; Sunken-line/bold-label/sunken-line framing, matching the section-header style used
+; elsewhere in this driver collection (e.g. the Agilent 531XXA driver's Channels page).
+#cmdSetup separator - Main
+1 100 Sunken
+
+#cmdSetup separator - Main
+:labelformat: bold (0,40,115)
+1 100 Empty
+center 4-Wire is the default - no remote readback, check the front panel
+
+#cmdSetup separator - Main
+1 100 Sunken
+
 #cmdSetup buttons Terminals Main
 ; Write-only: the 6560 has no query for the current 2-wire/4-wire state (checked the
 ; full command list - nothing in *STB?/*ESR? either), so this can drift from the
@@ -123,7 +136,7 @@ Open_Circuit_(>20_GOhm) 20000000000
 ; (manual 4.1.4); the 2-TERMINAL/4-TERMINAL front-panel LEDs are otherwise the only
 ; ground truth.
 :write: KEY (value=="2W"?"T":"F")
-:tip: Select 2-Wire or 4-Wire terminal configuration. 4-Wire is the instrument's default (set on Device Clear) - there is no remote query for this state, so if in doubt check the 2-TERMINAL/4-TERMINAL LED on the front panel.
+:tip: 4-Wire is the default; no remote readback - check the front-panel LED if in doubt.
 2-Wire 2W
 4-Wire 4W
 
