@@ -23,7 +23,7 @@ Discussion and support for TestController itself is on the EEVblog thread
 | [HP / Agilent 6060B](drivers/HP_Agilent_6060B/) | HP / Agilent 6060B 300 W DC electronic load | GPIB / LXI / serial | 1.1 | On hardware |
 | [HP / Agilent E3631A](drivers/HP_Agilent_E3631A/) | HP E3631A triple-output DC power supply, +6 V / +25 V / -25 V | GPIB / RS-232 | 1.2 | On hardware |
 | [HP / Agilent E363xA](drivers/HP_Agilent_E363xA/) | HP E3632A, E3633A, E3634A DC power supply | GPIB / RS-232 | 1.8 | On hardware |
-| [Agilent / Keysight E364xA Series](drivers/HP_Agilent_E364xA_Series/) | Agilent / Keysight E3640A–E3649A single- and dual-output DC power supply | GPIB / RS-232 | 1.4 | On hardware |
+| [Agilent / Keysight E364xA Series](drivers/Agilent_Keysight_E364xA_Series/) | Agilent / Keysight E3640A–E3649A single- and dual-output DC power supply | GPIB / RS-232 | 1.4 | On hardware |
 | [Agilent 33250A](drivers/Agilent_33250A/) | Agilent / Keysight 33250A 80 MHz function / arbitrary waveform generator | GPIB / RS-232 | 1.0 | As shipped |
 | [Keithley 200X](drivers/Keithley_200X/) | Keithley 2001, 2001M, 2002 bench multimeter | GPIB | 1.0 | As shipped |
 | [Guildline 6560](drivers/Guildline_6560/) | Guildline Instruments 6560 precision resistance calibrator, 0 Ω–100 MΩ | GPIB | 1.2 | On hardware |
