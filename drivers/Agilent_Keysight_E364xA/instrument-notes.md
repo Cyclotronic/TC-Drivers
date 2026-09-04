@@ -1,4 +1,4 @@
-# Agilent / Keysight E364xA Series — instrument notes
+# Agilent / Keysight E364xA — instrument notes
 
 Behaviour of the E364x supplies worth knowing when using this driver. These are
 characteristics of the instrument and the driver's design, not of TestController.

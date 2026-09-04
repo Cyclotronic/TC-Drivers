@@ -1,4 +1,4 @@
-# Agilent / Keysight E364xA Series DC Power Supplies
+# Agilent / Keysight E364xA DC Power Supplies
 
 TestController driver for the whole ten-model **E364x** family: the single-output
 **E3640A–E3645A** and the dual-output **E3646A–E3649A**, under Agilent and, from 2014,
@@ -12,7 +12,7 @@ sheet.
 
 | | |
 | --- | --- |
-| **Driver** | [`Agilent_Keysight_E364xA_Series.txt`](Agilent_Keysight_E364xA_Series.txt) |
+| **Driver** | [`Agilent_Keysight_E364xA.txt`](Agilent_Keysight_E364xA.txt) |
 | **Revision** | 1.4 |
 | **Interface** | GPIB, RS-232 |
 | **Instrument notes** | [`instrument-notes.md`](instrument-notes.md) |
@@ -212,7 +212,7 @@ a log is running, so a log's columns cannot change partway through.
 
 ## Installing
 
-Copy [`Agilent_Keysight_E364xA_Series.txt`](Agilent_Keysight_E364xA_Series.txt) into your
+Copy [`Agilent_Keysight_E364xA.txt`](Agilent_Keysight_E364xA.txt) into your
 TestController `Devices` folder and restart. If you have the earlier
 `HP_Agilent_E364xA.txt` installed, remove it first — both files declare the same
 `#idString` for the six single-output models and cannot coexist in the same `Devices`

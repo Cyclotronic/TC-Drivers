@@ -1,4 +1,4 @@
-; Agilent / Keysight E364xA Series DC Power Supplies - TestController driver
+; Agilent / Keysight E364xA DC Power Supplies - TestController driver
 ;
 ; Coverage   All ten E364x models: the six single-output, dual-range E3640A-
 ;            E3645A (30/50/80 W) and the four dual-output, dual-range E3646A-
@@ -358,8 +358,8 @@
 ; Default meta block (E3648A fallback - the bench unit)
 #meta
 #idString Agilent Technologies,E3648A,
-#name Agilent E364xA Series
-#handle AgilentE364xASeries
+#name Agilent E364xA
+#handle AgilentE364xA
 #sections DUAL
 
 #replaceText LowRangeName 8V_5A
