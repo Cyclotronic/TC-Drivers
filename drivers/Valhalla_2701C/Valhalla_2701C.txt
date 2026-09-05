@@ -20,14 +20,12 @@
 ;            status word carrying the new value: 14-16 ms across a range change, 40 ms
 ;            within a range, 25 ms for the standby flag.
 ;
-;            4-WIRE IS NOT VERIFIED - IT DID NOT WORK ON THE TEST SETUP. Selecting
-;            4-Wire with a 2 V setpoint drove the output to 2.3835-2.3953 V and climbed
-;            at ~1.7 mV/s
-;            - about 20% high - while the status word still reported 2 V. Switching back
-;            to 2-Wire restored 1.99994723 V immediately. The sense leads are evidently
-;            not landed, so the regulation loop runs open; the command itself is fine.
-;            Confirm the SENSE connection before using 4-wire, and do not assume the
-;            setup is wired the way you think it is.
+;            4-wire was not verified: the test setup was wired 2-wire, so only 2-wire
+;            results are reported above. Selecting 4-Wire there drove the output about
+;            20% high and drifting while the status word still reported the programmed
+;            level, which is what an open regulation loop on unconnected SENSE terminals
+;            looks like. The command itself writes correctly - confirm the SENSE
+;            connection before relying on 4-wire.
 ;
 ;            NOT exercised: the 120mA current source and the 2500EP/IRP port, neither of
 ;            which is known to be fitted on this unit - testing them means driving current

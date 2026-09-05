@@ -109,12 +109,12 @@ The `T1` (4-wire) command switches the regulation loop to the SENSE terminals. I
 not actually landed on the load, the loop runs open and the output is neither correct nor
 stable.
 
-Measured on this bench, with a 2 V setpoint:
+Measured with a 2 V setpoint:
 
 | Terminal mode | DMM reading |
 | --- | --- |
 | 2-wire (`T0`) | 1.99994723 V — −26 ppm |
-| 4-wire (`T1`), sense not landed | 2.3835–2.3953 V, **drifting +1.7 mV/s** |
+| 4-wire (`T1`), sense not connected | 2.3835–2.3953 V, **drifting +1.7 mV/s** |
 
 Roughly 20 % high and climbing. Nothing about the command fails, the status word still
 reports the programmed 2 V, and there is no query to tell you which mode is active — so this
