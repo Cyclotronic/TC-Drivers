@@ -54,6 +54,7 @@ Published in Markdown and PDF under [`notebooks/`](notebooks/).
 | Notebook | Subject |
 | --- | --- |
 | [`#interfaceType` and `#interface`](notebooks/interface-types-and-functions.md) | What declaring a device type does and does not do, and the type-plus-function requirement each feature applies before a device appears in its list |
+| [Silent failures in `#cmdSetup` and `Ascii`](notebooks/silent-failures-in-cmdsetup-and-ascii.md) | Five ways a definition parses cleanly and then quietly does nothing — including one that stops the whole Setup dialog from opening, with no error anywhere |
 
 These are working notes, not documentation, and each one states the TestController
 version it describes. See [`notebooks/README.md`](notebooks/README.md).

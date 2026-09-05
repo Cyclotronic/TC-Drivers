@@ -27,6 +27,7 @@ To re-render after editing a notebook:
 | Notebook | Subject | Version described |
 | --- | --- | --- |
 | [`#interfaceType` and `#interface`](interface-types-and-functions.md) &nbsp;·&nbsp; [PDF](interface-types-and-functions.pdf) | What declaring a device type does and does not do, what the interface map is for, and the type-plus-function requirement each feature applies before a device appears in its list | 3.49 |
+| [Silent failures in `#cmdSetup` and `Ascii`](silent-failures-in-cmdsetup-and-ascii.md) &nbsp;·&nbsp; [PDF](silent-failures-in-cmdsetup-and-ascii.pdf) | Five ways a definition parses cleanly and then does nothing without logging anything: a malformed parameter line taking the whole Setup dialog down, a `#scpiCmd` body under five characters, an undefined name in `#initCmd`, `infoAsk` ignoring `:update:`, and `:readmath:` running on a timed-out read | 3.51 |
 
 ## What these are not
 

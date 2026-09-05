@@ -16,6 +16,7 @@ it. Waiting on the process instead can hang indefinitely.
 
 import argparse
 import os
+import pathlib
 import re
 import shutil
 import subprocess
@@ -32,6 +33,13 @@ CHROME_CANDIDATES = [
     "/Applications/Chromium.app/Contents/MacOS/Chromium",
     "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
     "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+    # Windows. os.access(X_OK) is not meaningful for .exe on this platform, so
+    # find_chrome() tests these for existence only.
+    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe",
+    r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
 ]
 
 CSS = """
@@ -128,7 +136,12 @@ HTML = """<!doctype html>
 
 def find_chrome():
     for path in CHROME_CANDIDATES:
-        if os.path.isfile(path) and os.access(path, os.X_OK):
+        if not os.path.isfile(path):
+            continue
+        # On Windows every readable file reports X_OK, so the check adds nothing
+        # there and would reject nothing; on POSIX it still screens out a
+        # non-executable match.
+        if os.name == "nt" or os.access(path, os.X_OK):
             return path
     return None
 
@@ -203,10 +216,25 @@ def main():
             "--disable-gpu",
             "--no-first-run",
             "--no-default-browser-check",
-            "--user-data-dir=" + os.path.join(tmp, "profile"),
+        ]
+        if os.name == "nt":
+            # Windows only, so the Linux CI invocation is unchanged.
+            #
+            # No --user-data-dir here. Pointed at a fresh temp profile on Windows
+            # the browser starts, never renders, never exits and writes nothing to
+            # stderr, so the run dies on the PDF timeout with no clue as to why.
+            # Measured: identical arguments minus this flag render in about two
+            # seconds. --no-sandbox is the usual companion requirement.
+            cmd.append("--no-sandbox")
+        else:
+            cmd.append("--user-data-dir=" + os.path.join(tmp, "profile"))
+        cmd += [
             "--no-pdf-header-footer",
             "--print-to-pdf=" + pdf_path,
-            "file://" + html_path,
+            # as_uri() rather than "file://" + path: on Windows the latter builds
+            # file://C:\... , which Chrome treats as a host named "c" and silently
+            # never renders, so the run dies on the PDF timeout with no error.
+            pathlib.Path(html_path).as_uri(),
         ]
         proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         try:
