@@ -27,6 +27,7 @@ Discussion and support for TestController itself is on the EEVblog thread
 | [Agilent 33250A](drivers/Agilent_33250A/) | Agilent / Keysight 33250A 80 MHz function / arbitrary waveform generator | GPIB / RS-232 | 1.0 | As shipped |
 | [Keithley 200X](drivers/Keithley_200X/) | Keithley 2001, 2001M, 2002 bench multimeter | GPIB | 1.0 | As shipped |
 | [Guildline 6560](drivers/Guildline_6560/) | Guildline Instruments 6560 precision resistance calibrator, 0 Ω–100 MΩ | GPIB | 1.2 | On hardware |
+| [Valhalla 2701C](drivers/Valhalla_2701C/) | Valhalla Scientific 2701C / 2701B programmable DC voltage calibrator | GPIB | 1.0 | On hardware |
 | [Leo Bodnar LBE-1420](drivers/LeoBodnar_LBE-1420/) | Leo Bodnar LBE-1420 GPS/GNSS receiver, read-only NMEA | Serial | 1.2 | Shipped, renamed |
 
 **On hardware** — exercised against the instrument, limits read back from it.

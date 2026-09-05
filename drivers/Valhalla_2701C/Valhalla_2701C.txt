@@ -1,0 +1,247 @@
+; Valhalla Scientific 2701C Programmable DC Voltage/Current Calibrator (Option LNF, Low
+; Noise) - TestController driver
+;
+; Coverage   Voltage output level, legacy range override, 2-wire/4-wire terminal mode,
+;            Standby/Operate control, and output delimiter format. The optional 120mA
+;            current source, the 2500EP/IRP current-range commands and the SRQ enable are
+;            defined as commands but deliberately not wired to controls - see the notes at
+;            each. Readback of the instrument's live status word.
+;
+; Verified   Against a 2701C (Option LNF) at GPIB address 10 on a Prologix GPIB-Ethernet
+;            gateway, with the output measured by a Keithley 2002 8.5-digit DMM.
+;            Setpoints commanded from the Setup dialog, instrument in 2-wire: 1 V measured
+;            1.00000654 V (+6.5 ppm), 2 V measured 1.99994723 V (-26 ppm), 10 V measured
+;            9.9998045 V (-20 ppm). STANDBY drops the output to a few uV, while
+;            the status word goes on reporting the programmed level - measured -8.5 uV at
+;            the terminals with the status word still reading +0.200000E+1 V.
+;            VO auto-selects OPERATE, confirmed on the wire and in the readback field. The
+;            reply is a single CR,LF terminated line and "++read eoi" terminates on it
+;            promptly, so no #gpibReadEol override is needed. Settle from write to the
+;            status word carrying the new value: 14-16 ms across a range change, 40 ms
+;            within a range, 25 ms for the standby flag.
+;
+;            4-WIRE IS NOT VERIFIED - IT DID NOT WORK ON THE TEST SETUP. Selecting
+;            4-Wire with a 2 V setpoint drove the output to 2.3835-2.3953 V and climbed
+;            at ~1.7 mV/s
+;            - about 20% high - while the status word still reported 2 V. Switching back
+;            to 2-Wire restored 1.99994723 V immediately. The sense leads are evidently
+;            not landed, so the regulation loop runs open; the command itself is fine.
+;            Confirm the SENSE connection before using 4-wire, and do not assume the
+;            setup is wired the way you think it is.
+;
+;            NOT exercised: the 120mA current source and the 2500EP/IRP port, neither of
+;            which is known to be fitted on this unit - testing them means driving current
+;            into the DMM, so their commands are defined but unproven. The 1200V range is
+;            likewise untested and untestable here: Option LNF caps the output at +/-40V.
+;
+; Note       The status word reports the PROGRAMMED setpoint, not a measurement, and it is
+;            unchanged by STANDBY - so Output_Level logs what the calibrator is set to, not
+;            whether the output is live. Output_State_Readback is the field that answers
+;            that question. Do not read a logged Output_Level column as evidence that a
+;            voltage was actually present at the terminals.
+;
+; This is the LNF (Low Noise) option: output is limited to +/-40V regardless of range
+; selected, and the 1200V range has no calibration points. See Section 2-5 / Section 8-3.
+;
+; Written from the 2701C Operation Manual (2015 reissue), Section VII Remote Operation.
+;
+; One caution the Ascii driver brings with it: it connects without identifying anything, so
+; TC reports this device as present even against an empty address. A "connected" device
+; here is not evidence that the instrument is switched on - read the status word.
+;
+; Revision   1.0
+; Date       2026-09-04
+; Author     Cyclotron
+; License    MIT - see LICENSE
+;
+; Latest version: https://github.com/Cyclotronic/TC-Drivers
+; TestController by HKJ: https://lygte-info.dk/project/TestControllerIntro%20UK.html
+; Discussion: https://www.eevblog.com/forum/testgear/program-that-can-log-from-many-multimeters/
+
+#idString Valhalla,2701C
+#name Valhalla 2701C
+#handle Valhalla2701C
+#port GPIB
+; No *IDN?, no query-suffixed commands, and writes are fire-and-forget (no ack) - none of
+; the SCPI/SCPIx drivers apply. Ascii lets #scpiCmd define the raw command set and lets TC
+; connect without a matching *IDN? reply (TestControllerConfigDevice2 UK.html, "Non-SCPI
+; ascii devices (Ascii)").
+#driver Ascii
+#eol \n
+#interfaceType Calibrator
+#author Cyclotron
+
+#notes Valhalla Scientific Model 2701C Programmable DC Voltage/Current Calibrator, Low Noise (Option LNF) edition - output limited to +/-40V, 1200V range has no calibration points. No *IDN?; a read at any time returns the instrument's current status word regardless of what, if anything, was written first.
+
+; =============================================================================
+; COMMUNICATION & INITIALIZATION
+; =============================================================================
+
+; Forces delimiter mode E1 (CR,LF with EOI asserted) so reply framing is deterministic
+; rather than whatever the last session left behind. Measured as belt-and-braces: the unit
+; was already answering CR,LF terminated before this was sent, and reads terminated cleanly
+; either way. Note this is the command NAME plus its parameter, not the raw "E1" the
+; instrument sees: under #driver Ascii only names resolved through a #scpiCmd definition
+; reach the device, so a bare "E1" here would be looked up as a command, not found, and
+; silently go nowhere. Same reason #finalCmd and #outputOff name Standby rather than "S".
+#initCmd SetDelimiter 1
+; STANDBY on disconnect - matches #outputOff below; leaves the programmed level/range
+; alone so it is exactly as found next session.
+#finalCmd Standby
+#outputOff Standby
+
+; =============================================================================
+; RAW COMMAND DEFINITIONS
+; =============================================================================
+; Section 7-8-3 of the manual. None of these produce an acknowledgement; "Status?" below is
+; the only command defined as txrx? and it is what actually reads the instrument back.
+;
+; The manual says the 2701C can be read at any time with no preceding write, and the Ascii
+; driver does have receive-only primitives for that (rxuntil? / rxalluntil?, whose real
+; signature is "rxalluntil? <seconds> <expression>" - the online docs omit the timeout).
+; Those are untried against this instrument, so Status? hangs its read off a write instead.
+; Q0 - disable SRQ-on-undecipherable-command - is the safest documented command that
+; touches neither level, range, mode nor terminal wiring. The cost is that every poll
+; re-disables SRQ, which is why the SRQ control is not on the Setup pages: a checkbox that
+; the next status read silently undoes is worse than no checkbox. Switching Status? to a
+; receive-only read would remove the write entirely; do that with the instrument in front
+; of you, not on paper.
+#scpiCmd Status? txrx? Q0
+
+; Manual 7-8-3-1/2: VO auto-selects the voltage range, including 200mV; R cannot select it.
+#scpiCmd SetVoltage tx VO(value)
+#scpiCmd SetRange tx R(value)
+#scpiCmd SetTerminals tx T(value)
+; Wrapped in a quoted expression, which evaluates back to a bare S / V before transmission.
+; This is not style: DeviceAscii dispatches a command by testing cmddef.substring(0, 5)
+; against "#pgm#" with no length guard, so a definition body shorter than five characters
+; ("tx S" is four) throws StringIndexOutOfBoundsException instead of running. Every other
+; definition in this file is long enough to clear it on its own.
+#scpiCmd Standby tx ("S")
+#scpiCmd Operate tx ("V")
+#scpiCmd SetDelimiter tx E(value)
+; Defined for command-line use only - see the Status? note above for why it is not a control.
+#scpiCmd SetSRQ tx Q(value)
+
+; Optional 120mA current-source hardware (Option IT-2). Not wired into the Setup UI below
+; until confirmed fitted on this unit.
+#scpiCmd SetCurrent tx II(value)
+
+; Optional 2500EP remote current calibrator via the rear IRP port. Not wired into the
+; Setup UI below until confirmed connected.
+#scpiCmd Set2500EPCurrent tx IO(value)
+
+; =============================================================================
+; LOGGED VALUES
+; =============================================================================
+
+; Status word format (Section 7-8-1): "SN.NNNNNNEsn xx o" - signed mantissa, signed
+; exponent, units ("V" or "mA"), trailing space (OPERATE) or "*" (STANDBY). Regex pulls
+; just the signed-mantissa-times-exponent number; sign and magnitude are both in group 1,
+; so double() on it already carries the correct polarity. Note it does not check the units
+; field, so with the 120mA option fitted and selected this logs milliamps into a column
+; labelled V - acceptable while nothing here drives that option, but not once it is wired.
+#value Output_Level V SI
+#askValues Status?
+#askValuesMathFormat double(getMatchGroup(value,"([+-]?[0-9.]+E[+-]?[0-9]+)",1))
+
+; =============================================================================
+; SETUP CONTROLS - MAIN PAGE
+; =============================================================================
+
+#cmdSetup number SetVoltage Main
+:read: Status?
+; Same extraction as #askValuesMathFormat above. Without a :read: this field opens blank and
+; never shows what the instrument is actually set to - including after VO auto-ranges, or
+; after someone uses the front panel.
+:readmath: double(getMatchGroup(value,"([+-]?[0-9.]+E[+-]?[0-9]+)",1))
+:write: SetVoltage
+:tip: Output in volts: 0.1 = 100mV. Automatically selects the best range, including 200mV, and enters OPERATE. LNF limit: +/-40V. The 200mV range is 2-wire only; use SENSE terminals.
+:update: Main.Status Main.Output_State_Readback
+V -40 40
+
+; Write-only: the status word reports a level and its units but not which range produced it,
+; so this control cannot be read back and will keep displaying whatever was last selected
+; here. SetVoltage supersedes it silently by auto-ranging, so treat a stale selection as
+; expected rather than as a fault.
+#cmdSetup combobox Legacy_range_override Main
+:write: SetRange
+:tip: Optional legacy range override. SetVoltage automatically selects the appropriate range, including 200mV, and supersedes this override. A separate 200mV override is not supported by the instrument.
+:update: Main.Status
+2V 0
+20V 1
+120V 2
+1200V 3
+
+; Also write-only - the 2701C has no query for the current 2-wire/4-wire state, so this can
+; drift from the instrument if someone touches the front panel. The front-panel 4-WIRE LED
+; is the only ground truth.
+#cmdSetup buttons SetTerminals Main
+:write: SetTerminals (value=="2W"?"0":"1")
+:tip: 2-wire or 4-wire terminal configuration. Not available for the 200mV range. No remote readback - check the front-panel LED if in doubt.
+2-Wire 2W
+4-Wire 4W
+
+#cmdSetup buttons Output_State Main
+:write: (value=="ON"?"Operate":"Standby")
+:tip: OPERATE enables the output; STANDBY disables it. Most commands above auto-select OPERATE, so this is rarely needed except to force STANDBY.
+:update: Main.Status Main.Output_State_Readback
+Standby OFF
+Operate ON
+
+; "info", not "infoAsk". An infoAsk refreshes ONLY from its own Get button: InfoAskField
+; puts the read in localSyncValue() and never overrides syncValue(), which the base class
+; leaves empty - so naming one in another control's :update: list is a silent no-op, and
+; the field goes on displaying whatever the last Get returned. That cost an hour here: a
+; stale reading after a Set looked exactly like a settle-time race, and the instrument's
+; real settle is 14-40 ms, far too quick to be the cause. InfoField does override
+; syncValue(), so these two refresh whenever something writes.
+#cmdSetup info Status Main
+:read: Status?
+:tip: Raw status word from the instrument (level, units, OPERATE/STANDBY)
+
+; Deliberately a substring test rather than an anchored regex. Measured on the wire, OPERATE
+; comes back as "  +1.000000E+0 V  \r\n" - trailing spaces - and STANDBY as "... V *\r\n".
+; An end-anchored "[*]$" therefore only works because TC happens to trim() the reply before
+; :readmath: runs, and it fails towards reporting OPERATE for a unit that is actually in
+; standby. "*" appears nowhere else in the status word, so indexOf is both simpler and
+; indifferent to trailing whitespace and line endings.
+#cmdSetup info Output_State_Readback Main
+:read: Status?
+:readmath: indexOf(value,"*") >= 0 ? "STANDBY" : "OPERATE"
+:tip: OPERATE/STANDBY decoded from the trailing character of the status word (blank = OPERATE, '*' = STANDBY)
+
+; The readbacks above only refresh when one of this driver's own controls writes, which
+; leaves them stale if someone turns the front-panel knobs or presses its LOCAL key. This
+; re-reads them every 2 s while the dialog is open (the timer stops itself when it is not),
+; so the OPERATE/STANDBY indicator cannot quietly go on claiming the output is off. The
+; params line is the interval in seconds and is NOT optional - UpdaterField reads
+; paramsList.get(0) unguarded, so omitting it throws while the dialog is being built and
+; the whole Setup popup silently fails to open.
+#cmdSetup updater Refresh Main
+:update: Main.Status Main.Output_State_Readback
+2
+
+; =============================================================================
+; SETUP CONTROLS - SYSTEM PAGE
+; =============================================================================
+
+#cmdSetup combobox SetDelimiter System
+:write: SetDelimiter
+:tip: Output reply delimiter. E1 (CR,LF with EOI) is set automatically on connect - only change this if you know what you are doing.
+; The instrument has no query for the delimiter mode, so this combobox is write-only and
+; simply displays its first entry. E1 is listed first, out of numeric order, so that what
+; it shows on connect matches what #initCmd actually set.
+CR,LF+EOI 1
+CR,LF 0
+CR 2
+CR+EOI 3
+EOI_on_last_char 4
+
+#cmdSetup separator - System
+1 100 Sunken
+
+#cmdSetup separator - System
+:labelformat: bold (0,40,115)
+1 100 Empty
+center SetCurrent, Set2500EPCurrent and SetSRQ are defined but have no controls - see the command definitions for why.
