@@ -20,10 +20,10 @@
 ;            status word carrying the new value: 14-16 ms across a range change, 40 ms
 ;            within a range, 25 ms for the standby flag.
 ;
-;            NOT exercised: 4-wire mode, the 120mA current source and the 2500EP/IRP
-;            port - the last two are optional hardware not known to be fitted on this
-;            unit, so their commands are defined but unproven. The 1200V range is
-;            likewise untested and untestable here: Option LNF caps the output at +/-40V.
+;            NOT exercised: the 120mA current source and the 2500EP/IRP port, neither of
+;            which is known to be fitted on this unit, so their commands are defined but
+;            unproven. The 1200V range is likewise untested and untestable here: Option
+;            LNF caps the output at +/-40V.
 ;
 ; Note       The status word reports the PROGRAMMED setpoint, not a measurement, and it is
 ;            unchanged by STANDBY - so Output_Level logs what the calibrator is set to, not
