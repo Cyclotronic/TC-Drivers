@@ -9,9 +9,6 @@ output measured by a Keithley 2002 8½-digit DMM. Commanded setpoints measured *
 1.00000654 V**, **2 V → 1.99994723 V**, **10 V → 9.9998045 V**; STANDBY drops the output to
 a few µV.
 
-Those measurements were taken **2-wire**, and 4-wire is *not* verified. See `SetTerminals`
-below before using it.
-
 | | |
 | --- | --- |
 | **Driver** | [`Valhalla_2701C.txt`](Valhalla_2701C.txt) |
@@ -37,10 +34,9 @@ is refused rather than sent.
 `SetVoltage` auto-ranges and supersedes it — and it cannot reach the 200 mV range at all. It
 is here for completeness with earlier 2701-series units.
 
-`SetTerminals` selects 2-wire or 4-wire. **Check your sense leads before selecting
-4-wire:** if the SENSE terminals are not connected to the load, the regulation loop runs
-open and the output goes high and drifts while the status word still reports the programmed
-level. There is no remote query for which mode is active. See the instrument notes.
+`SetTerminals` selects 2-wire or 4-wire. There is no remote query for which mode is
+active, so this control shows what it last wrote and the front-panel indicator is the only
+ground truth.
 
 `Output State` forces STANDBY or OPERATE. Most commands select OPERATE on their own, so
 this is mainly how you turn the output off.

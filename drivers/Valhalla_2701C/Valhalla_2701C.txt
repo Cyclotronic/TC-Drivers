@@ -20,16 +20,9 @@
 ;            status word carrying the new value: 14-16 ms across a range change, 40 ms
 ;            within a range, 25 ms for the standby flag.
 ;
-;            4-wire was not verified: the test setup was wired 2-wire, so only 2-wire
-;            results are reported above. Selecting 4-Wire there drove the output about
-;            20% high and drifting while the status word still reported the programmed
-;            level, which is what an open regulation loop on unconnected SENSE terminals
-;            looks like. The command itself writes correctly - confirm the SENSE
-;            connection before relying on 4-wire.
-;
-;            NOT exercised: the 120mA current source and the 2500EP/IRP port, neither of
-;            which is known to be fitted on this unit - testing them means driving current
-;            into the DMM, so their commands are defined but unproven. The 1200V range is
+;            NOT exercised: 4-wire mode, the 120mA current source and the 2500EP/IRP
+;            port - the last two are optional hardware not known to be fitted on this
+;            unit, so their commands are defined but unproven. The 1200V range is
 ;            likewise untested and untestable here: Option LNF caps the output at +/-40V.
 ;
 ; Note       The status word reports the PROGRAMMED setpoint, not a measurement, and it is

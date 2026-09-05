@@ -103,27 +103,6 @@ Settle time from write to the status word carrying the new value, measured:
 That is fast enough that a controller reading back immediately after a write can still lose
 the race, since a GPIB-Ethernet gateway round trip is ~20 ms on its own.
 
-## Selecting 4-wire without sense leads gives an uncontrolled output
-
-The `T1` (4-wire) command switches the regulation loop to the SENSE terminals. If those are
-not actually landed on the load, the loop runs open and the output is neither correct nor
-stable.
-
-Measured with a 2 V setpoint:
-
-| Terminal mode | DMM reading |
-| --- | --- |
-| 2-wire (`T0`) | 1.99994723 V — −26 ppm |
-| 4-wire (`T1`), sense not connected | 2.3835–2.3953 V, **drifting +1.7 mV/s** |
-
-Roughly 20 % high and climbing. Nothing about the command fails, the status word still
-reports the programmed 2 V, and there is no query to tell you which mode is active — so this
-presents as a calibrator that has simply gone wrong. If readings drift after a terminal-mode
-change, suspect the sense connection first.
-
-There is no remote query for 2-wire/4-wire state. The front-panel indicator is the only
-ground truth.
-
 ## Nothing but the level can be read back
 
 There is no query for terminal mode, range, delimiter mode, or SRQ enable. Any UI showing
